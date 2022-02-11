@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Nov 29 23:15:35 2018
-
-@author: Francesco Bovo
-"""
 import itertools
 import random
+import re
+import pylab
+import inspyred
+import scipy as sp
+import numpy as np
+import pandas as pd
 from collections import Counter
 from time import time
 
-import inspyred
-import numpy as np
-import pandas as pd
+import scipy.io
 
 
 def IC(_G, S, p=0.5, mc=1000):
@@ -131,8 +130,8 @@ def get_influence(RRS, seeds, num_nodes):
         Return: a value represents the estimation of influence of the seeds
     """
     count = 0
-    for set in RRS:
-        for node in set:
+    for seed_set in RRS:
+        for node in seed_set:
             if seeds[node - 1] > 0.5:
                 count = count + 1
                 break
@@ -140,8 +139,8 @@ def get_influence(RRS, seeds, num_nodes):
 
 
 def _my_generator(random, args):
-    size = args.get('num_users')
-    return [random.random() for i in range(size)]
+    num_users = args.get('num_users')
+    return [random.random() for _ in range(num_users)]
 
 
 def _my_evaluator(candidates, args):
@@ -159,8 +158,8 @@ def _my_evaluator(candidates, args):
 
 
 def _my_bound(candidate, args):
-    for i, c in enumerate(candidate):
-        candidate[i] = max(min(c, 1), 0)
+    for _i, c in enumerate(candidate):
+        candidate[_i] = max(min(c, 1), 0)
     return candidate
 
 
@@ -170,18 +169,18 @@ _my_bound.upper_bound = itertools.repeat(1)
 
 def optimization(_G, _user_num, prng=None, display=False):
     # TODO
-    # bounder
-    # something wrong with pipeline
-    # timer
+    # timer in bar
+    # parse matrix
+    # use file to skip initialization
 
-    # create sketch by sampling edges according to the weight
+    # create sketch
     sketches = []
-    len_sketch = 100
+    len_sketch = 1000
     p = 0.3
-    # weight_range = max(_G['weight']) - min(_G['weight']) + 1
+    weight_range = max(_G['weight']) - min(_G['weight']) + 1
     print("creating sketch")
     print("\r{:3}%".format(0), end="")
-    for i in range(0, len_sketch):
+    for _i in range(0, len_sketch):
         # g = pd.DataFrame(columns=['source', 'target'], dtype=int)
         # for row in _G.itertuples():
         #     b = getattr(row, 'weight') > weight_range * np.random.rand()
@@ -189,20 +188,19 @@ def optimization(_G, _user_num, prng=None, display=False):
         #         g = g.append({"source": getattr(row, 'source'), "target": getattr(row, 'target')}, ignore_index=True)
         g = _G.copy().loc[np.random.uniform(0, 1, _G.shape[0]) < p]
         sketches.append(g)
-        print("\r{:3}%".format((i + 1) / len_sketch * 100), end="")
+        print("\r{:3}%".format((_i + 1) / len_sketch * 100), end="")
     print("\n")
-    np.savetxt("sketches-out.csv", sketches, delimiter=", ", fmt="% s")
+    np.savetxt("sketches-out.txt", sketches, delimiter=", ", fmt="% s")
 
     # create RRS according to sketches
     RRS = []
-    len_RRS = 500
+    len_RRS = 50000
     print("creating RRS")
     print("\r{:3}%".format(0), end="")
-    for i in range(0, len_RRS):
+    for _i in range(0, len_RRS):
         r = get_random_RRS(_G=_G, sketches=sketches)
-        if len(r) > 1:
-            RRS.append(r)
-        print("\r{:3}%".format((i + 1) / len_RRS * 100), end="")
+        RRS.append(r)
+        print("\r{:3}%".format((_i + 1) / len_RRS * 100), end="")
     print("\n")
     np.savetxt("RRS-out.csv", RRS, delimiter=", ", fmt="% s")
 
@@ -228,17 +226,12 @@ def optimization(_G, _user_num, prng=None, display=False):
     #
     if display:
         final_arc = ea.archive
-        # print('Best Solutions: \n')
         np.savetxt("pop-out.csv", ea.population, delimiter=", ", fmt="% s")
-        # print(final_pop)
-        import pylab
         x = []
         y = []
-        for f in final_arc:
-            x.append(-f.fitness[0])
-            y.append(f.fitness[1])
-        pylab.xlim(0, max(x) + (max(x) - min(x)) / 3)
-        pylab.ylim(0, max(y) + (max(y) - min(y)) / 3)
+        for agent in final_arc:
+            x.append(-agent.fitness[0])
+            y.append(agent.fitness[1])
         pylab.xlabel('influence spread')
         pylab.ylabel('recruit cost')
         pylab.scatter(x, y, color='b')
@@ -252,33 +245,53 @@ if __name__ == "__main__":
     path = 'soc-douban.mtx'
     f = open(path, 'r')
     f.readline()
-    user_num = int(f.readline().split(" ")[0])
+    user_num = int(f.readline().split(" ")[1])
     print("user_num is : " + str(user_num))
+    f.close()
 
+    idx_G = ['source', 'target', 'weight']
     G = pd.read_csv(
         path,
         delimiter=" ",
         index_col=False,
-        names=['source', 'target'],
+        names=idx_G,
         skiprows=2)
 
-    # ris_output = ris(_G=G, k=20, p=0.2, mc=10)
-
-    #
-    # do optimization
-
-    # for i in range(10):
-    #     ris_spread[i] = IC(_G=G, S=ris_output[0], p=0.2)
-    #     print("\r{:3}%".format((i + 1) / 10 * 100), end="")
-    # print("\n")
-    #
-    # spread_list = [0] * 2
-    # spread_list[0] = 'expected spread'
-    # spread_list[1] = mean(ris_spread)
-    #
-    # results = [0] * 3
-    # results[0] = ris_output[0]
-    # results[1] = ris_output[1]
-    # results[2] = spread_list
-    # pd.DataFrame(results).to_csv("results_oz-out", index=False, header=False)
+    sym = False
+    if sym:
+        G_copy = G.copy(deep=True)
+        G_copy[['target', 'source']] = G_copy[['source', 'target']]
+        G_copy.columns = ['source', 'target']
+        G = pd.concat([G, G_copy], ignore_index=True)
     optimization(G, user_num, display=True)
+
+    # test out files
+    # f = open("pop-out.csv", 'r')
+    # DNAs = []
+    # seeds = []
+    # values = []
+    # lines = f.readlines()
+    # for line in lines:
+    #     items = re.split(r"[\[\]]", line)
+    #     DNA = list(map(float, items[1].split(",")))
+    #     DNAs.append(DNA)
+    #     seed = []
+    #     for i in range(0, len(DNA)):
+    #         if DNA[i] > 0.5:
+    #             seed.append(i + 1)
+    #     seeds.append(seed)
+    #     value = items[3].split(",")
+    #     values.append([float(value[0]), int(value[1])])
+    #
+    # x = []
+    # y = []
+    # for value in values:
+    #     x.append(-value[0])
+    #     y.append(value[1])
+    # pylab.xlabel('influence spread')
+    # pylab.ylabel('recruit cost')
+    # pylab.scatter(x, y, color='b')
+    # pylab.savefig('{0} ({1}).pdf'.format("pop", "test"),
+    #               format='pdf')
+    # pylab.show()
+    # f.close()
