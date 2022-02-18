@@ -4,13 +4,13 @@ import random
 import re
 import pylab
 import inspyred
-import scipy as sp
 import numpy as np
 import pandas as pd
 from collections import Counter
 from time import time
 
 import scipy.io
+from inspyred.ec import emo
 
 
 def IC(_G, S, p=0.5, mc=1000):
@@ -89,7 +89,7 @@ def ris(_G, k, p=0.5, mc=1000):
     return sorted(SEED), timelapse
 
 
-def get_random_RRS(_G, sketches):
+def get_random_RRS(_G, sketch):
     """
     Inputs: G:  Ex2 dataframe of directed edges. Columns: ['source','target']
     Return: A random reverse reachable set expressed as a list of nodes
@@ -99,13 +99,12 @@ def get_random_RRS(_G, sketches):
     source = np.random.choice(np.unique(_G['source']))
 
     # Step 2. Get an instance of g
-    g = sketches[np.random.randint(0, len(sketches))]
 
     # Step 3. Construct reverse reachable set of the random source node
     new_nodes, RRS0 = [source], [source]
     while new_nodes:
         # Limit to edges that flow into the source node
-        temp = g.loc[g['target'].isin(new_nodes)]
+        temp = sketch.loc[sketch['target'].isin(new_nodes)]
 
         # Extract the nodes flowing into the source node
         temp = temp['source'].tolist()
@@ -144,7 +143,7 @@ def _my_generator(random, args):
 
 
 def _my_evaluator(candidates, args):
-    values = []
+    fitness = []
     RRS = args.get('RRS')
     num_users = args.get('num_users')
     for cs in candidates:
@@ -153,8 +152,9 @@ def _my_evaluator(candidates, args):
             if c > 0.5:
                 rec_cost = rec_cost + 1
         influence_spread = get_influence(RRS, cs, num_users)
-        values.append([-influence_spread, rec_cost])
-    return values
+        # fitness.append([-influence_spread, rec_cost])
+        fitness.append(emo.Pareto([-influence_spread, rec_cost]))
+    return fitness
 
 
 def _my_bound(candidate, args):
@@ -167,43 +167,64 @@ _my_bound.lower_bound = itertools.repeat(0)
 _my_bound.upper_bound = itertools.repeat(1)
 
 
+def my_observer(population, num_generations, num_evaluations, args):
+    print("\rgen : {:3}".format(num_generations), end="")
+    if args.get('max_generations') == num_generations:
+        print('\n')
+
+
 def optimization(_G, _user_num, prng=None, display=False):
     # TODO
     # timer in bar
     # parse matrix
     # use file to skip initialization
 
-    # create sketch
-    sketches = []
-    len_sketch = 1000
-    p = 0.3
-    weight_range = max(_G['weight']) - min(_G['weight']) + 1
-    print("creating sketch")
-    print("\r{:3}%".format(0), end="")
-    for _i in range(0, len_sketch):
-        # g = pd.DataFrame(columns=['source', 'target'], dtype=int)
-        # for row in _G.itertuples():
-        #     b = getattr(row, 'weight') > weight_range * np.random.rand()
-        #     if b:
-        #         g = g.append({"source": getattr(row, 'source'), "target": getattr(row, 'target')}, ignore_index=True)
-        g = _G.copy().loc[np.random.uniform(0, 1, _G.shape[0]) < p]
-        sketches.append(g)
-        print("\r{:3}%".format((_i + 1) / len_sketch * 100), end="")
-    print("\n")
-    np.savetxt("sketches-out.txt", sketches, delimiter=", ", fmt="% s")
-
-    # create RRS according to sketches
+    use_file = True
     RRS = []
-    len_RRS = 50000
-    print("creating RRS")
-    print("\r{:3}%".format(0), end="")
-    for _i in range(0, len_RRS):
-        r = get_random_RRS(_G=_G, sketches=sketches)
-        RRS.append(r)
-        print("\r{:3}%".format((_i + 1) / len_RRS * 100), end="")
-    print("\n")
-    np.savetxt("RRS-out.csv", RRS, delimiter=", ", fmt="% s")
+    if not use_file:
+        # create sketch
+        sketches = []
+        len_sketch = 10000
+        weighted = False
+        if weighted:
+            weight_range = max(_G['weight']) - min(_G['weight']) + 1
+        p = 0.5
+        print("creating sketch")
+        print("\r{:3}%".format(0), end="")
+        for _i in range(0, len_sketch):
+            if weighted:
+                g = pd.DataFrame(columns=['source', 'target'], dtype=int)
+                for row in _G.itertuples():
+                    # sample edges based on weight
+                    # ?
+                    if p ** getattr(row, 'weight') < np.random.uniform(0, 1):
+                        g = g.append({"source": getattr(row, 'source'), "target": getattr(row, 'target')},
+                                     ignore_index=True)
+            else:
+                g = _G.copy().loc[np.random.uniform(0, 1, _G.shape[0]) < p]
+            sketches.append(g)
+            print("\r{:3}%".format((_i + 1) / len_sketch * 100), end="")
+        print("\n")
+        # print(sketches)
+        np.savetxt("./result/sketches-out.txt", sketches, delimiter=", ", fmt="% s")
 
+        # create RRS according to sketches
+        RRS = []
+        print("creating RRS")
+        print("\r{:3}%".format(0), end="")
+        for _i in range(0, len_sketch):
+            for _ in range(0, 10):
+                r = get_random_RRS(_G=_G, sketch=sketches[_i])
+                RRS.append(r)
+            print("\r{:3}%".format((_i + 1) / len_sketch * 100), end="")
+        print("\n")
+        np.savetxt("./result/RRS-out.txt", RRS, delimiter=", ", fmt="% s")
+    else:
+        RRS_file = open("./result/RRS-out.txt")
+        for rf in RRS_file.readlines():
+            rf = rf.strip('[]\n')
+            RRS.append(list(map(int, rf.split(","))))
+        print("read RRS from file")
     #
     if prng is None:
         prng = random.Random()
@@ -213,43 +234,45 @@ def optimization(_G, _user_num, prng=None, display=False):
     ea.variator = [inspyred.ec.variators.blend_crossover,
                    inspyred.ec.variators.gaussian_mutation]
     ea.terminator = inspyred.ec.terminators.generation_termination
+    ea.observer = my_observer
     final_pop = ea.evolve(
         evaluator=_my_evaluator,
         generator=_my_generator,
         bounder=_my_bound,
         pop_size=100,
         maximize=False,
-        max_generations=100,
+        max_generations=10,
         num_users=_user_num,
         RRS=RRS)
 
     #
     if display:
         final_arc = ea.archive
-        np.savetxt("pop-out.csv", ea.population, delimiter=", ", fmt="% s")
-        x = []
-        y = []
+        np.savetxt("./result/pop.txt", ea.population, delimiter=", ", fmt="% s")
+        np.savetxt("./result/arc.txt", ea.archive, delimiter=", ", fmt="% s")
+        _x = []
+        _y = []
         for agent in final_arc:
-            x.append(-agent.fitness[0])
-            y.append(agent.fitness[1])
-        pylab.xlabel('influence spread')
-        pylab.ylabel('recruit cost')
-        pylab.scatter(x, y, color='b')
-        pylab.savefig('{0} ({1}).pdf'.format(ea.__class__.__name__, 'IM'),
+            _x.append(-agent.fitness[0])
+            _y.append(agent.fitness[1])
+        pylab.xlabel('Influence spread')
+        pylab.ylabel('Recruitment costs')
+        pylab.scatter(_x, _y, color='b')
+        pylab.savefig('./result/{0} {1}.pdf'.format(ea.__class__.__name__, 'IM'),
                       format='pdf')
         pylab.show()
     return ea
 
 
 if __name__ == "__main__":
-    path = 'soc-douban.mtx'
+    path = 'soc-wiki-Vote.mtx'
     f = open(path, 'r')
     f.readline()
-    user_num = int(f.readline().split(" ")[1])
+    user_num = int(f.readline().split(" ")[0])
     print("user_num is : " + str(user_num))
     f.close()
 
-    idx_G = ['source', 'target', 'weight']
+    idx_G = ['source', 'target']
     G = pd.read_csv(
         path,
         delimiter=" ",
@@ -257,8 +280,8 @@ if __name__ == "__main__":
         names=idx_G,
         skiprows=2)
 
-    sym = False
-    if sym:
+    directed = False
+    if directed:
         G_copy = G.copy(deep=True)
         G_copy[['target', 'source']] = G_copy[['source', 'target']]
         G_copy.columns = ['source', 'target']
@@ -266,32 +289,32 @@ if __name__ == "__main__":
     optimization(G, user_num, display=True)
 
     # test out files
-    # f = open("pop-out.csv", 'r')
+    f = open("./result/pop.txt", 'r')
     # DNAs = []
     # seeds = []
-    # values = []
-    # lines = f.readlines()
-    # for line in lines:
-    #     items = re.split(r"[\[\]]", line)
-    #     DNA = list(map(float, items[1].split(",")))
-    #     DNAs.append(DNA)
-    #     seed = []
-    #     for i in range(0, len(DNA)):
-    #         if DNA[i] > 0.5:
-    #             seed.append(i + 1)
-    #     seeds.append(seed)
-    #     value = items[3].split(",")
-    #     values.append([float(value[0]), int(value[1])])
+    values = []
+    lines = f.readlines()
+    for line in lines:
+        items = re.split(r"[\[\]]", line)
+        # DNA = list(map(float, items[1].split(",")))
+        # DNAs.append(DNA)
+        # seed = []
+        # for i in range(0, len(DNA)):
+        #     if DNA[i] > 0.5:
+        #         seed.append(i + 1)
+        # seeds.append(seed)
+        value = items[3].split(",")
+        values.append([float(value[0]), int(value[1])])
     #
-    # x = []
-    # y = []
-    # for value in values:
-    #     x.append(-value[0])
-    #     y.append(value[1])
-    # pylab.xlabel('influence spread')
-    # pylab.ylabel('recruit cost')
-    # pylab.scatter(x, y, color='b')
-    # pylab.savefig('{0} ({1}).pdf'.format("pop", "test"),
-    #               format='pdf')
-    # pylab.show()
-    # f.close()
+    x = []
+    y = []
+    for value in values:
+        x.append(-value[0])
+        y.append(value[1])
+    pylab.xlabel('influence spread')
+    pylab.ylabel('recruit cost')
+    pylab.scatter(x, y, color='b')
+    pylab.savefig('./result/{0}.pdf'.format("pop"),
+                  format='pdf')
+    pylab.show()
+    f.close()
