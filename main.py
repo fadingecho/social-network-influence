@@ -1,16 +1,17 @@
+"""
+NSGA-II and CELF on influence maximization problem (IM)
+
+"""
 # -*- coding: utf-8 -*-
 import itertools
 import os
 import random
-import re
 import traceback
-
 import matplotlib.pyplot as plt
 import pylab
 import inspyred
 import numpy as np
 import pandas as pd
-from collections import Counter
 from time import time
 from inspyred.ec import emo
 
@@ -56,7 +57,6 @@ def IC(_G, S, p=0.5, mc=1000):
 def celf(_G, p=0.6, mc=1000):
     """
     Inputs: G:  Ex2 dataframe of directed edges. Columns: ['source','target']
-            node_num:  Size of seed set
             p:  Disease propagation probability
             mc: Number of Monte-Carlo simulations
     Return: greedy_trace: list[cost] = influence
@@ -164,6 +164,11 @@ def get_influence(RRS, seeds, num_nodes):
     return count / len(RRS) * num_nodes
 
 
+# -------------
+# these are for the inspyred framework
+# -------------
+
+
 def _my_generator(random, args):
     num_users = args.get('num_users')
     return [random.random() for _ in range(num_users)]
@@ -201,10 +206,24 @@ def my_observer(population, num_generations, num_evaluations, args):
 
 
 def EC_optimization(_G, _user_num, pop_size=100, max_generation=500, sketch_num=10000, prng=None):
+    """
+    my modified nsga-ii
+    :param _G: network
+    :param _user_num: vertex number
+    :param pop_size:
+    :param max_generation:
+    :param sketch_num: number of sketch for rr sets
+    :param prng: I don't know what it is
+    :return: values of final archive set [[influence], [cost]]
+    """
+
     # TODO
-    # multi dataset
+    # use file
+
     start_time = time()
 
+    # step 1 : get rr sets
+    # if we've already got the rr sets for this network
     use_file = False
     RRS = []
     if not use_file:
@@ -239,22 +258,27 @@ def EC_optimization(_G, _user_num, pop_size=100, max_generation=500, sketch_num=
         try:
             RRS_file = open(result_path + dataset_name + "RRS-out.txt")
         except FileNotFoundError:
+            print("RRS-out.txt lost!")
             traceback.print_exc()
 
         for rf in RRS_file.readlines():
             rf = rf.strip('[]\n')
             RRS.append(list(map(int, rf.split(","))))
         print("read RRS from file")
-    #
+
+    # start optimization
     if prng is None:
         prng = random.Random()
         prng.seed(time())
 
     ea = inspyred.ec.emo.NSGA2(prng)
-    ea.variator = [inspyred.ec.variators.blend_crossover,
-                   inspyred.ec.variators.gaussian_mutation]
+    ea.variator = [
+        inspyred.ec.variators.blend_crossover,
+        inspyred.ec.variators.gaussian_mutation
+    ]
     ea.terminator = inspyred.ec.terminators.generation_termination
     ea.observer = my_observer
+
     final_pop = ea.evolve(
         evaluator=_my_evaluator,
         generator=_my_generator,
@@ -265,8 +289,8 @@ def EC_optimization(_G, _user_num, pop_size=100, max_generation=500, sketch_num=
         num_users=_user_num,
         RRS=RRS)
     print(str(time() - start_time) + 's\n')
-    #
 
+    # process the result
     try:
         np.savetxt(result_path + dataset_name + "/pop.txt", ea.population, delimiter=", ", fmt="% s")
         np.savetxt(result_path + dataset_name + "/arc.txt", ea.archive, delimiter=", ", fmt="% s")
@@ -280,6 +304,7 @@ def EC_optimization(_G, _user_num, pop_size=100, max_generation=500, sketch_num=
     for agent in ea.archive:
         _x.append(-agent.fitness[0])
         _y.append(agent.fitness[1])
+
     return [_x, _y]
 
 
@@ -320,7 +345,12 @@ if __name__ == "__main__":
     print("==========")
 
     for idx in my_datasets.index:
+
+        # check dataset
         if not my_datasets['activate'][idx]:
+            continue
+        if my_datasets['weighted'][idx]:
+            print("can not process weight network")
             continue
 
         dataset_name = str(my_datasets['name'][idx])
@@ -336,6 +366,7 @@ if __name__ == "__main__":
             names=idx_G,
             skiprows=2)
 
+        # if network is directed
         if not my_datasets["directed"][idx]:
             print("this data is undirected")
             G_copy = G.copy(deep=True)

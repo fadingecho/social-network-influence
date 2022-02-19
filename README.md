@@ -1,10 +1,12 @@
-# social-network-influence
-multi-objective optimization on IM problem based on RR sketch
+# Social-network influence maximization
+Multi-objective optimization on IM problem based on RR sketch.   
+Also a CELF implementation.
 
-# download data set
+# Download data set
 https://networkrepository.com/soc.php
 
-# reference repo
-https://github.com/Francescobovo/Influence-Maximisation
-
-PS: results are wrong, still fixing it
+# references
+https://github.com/Francescobovo/Influence-Maximisation   
+https://networkrepository.com/index.php   
+https://pandas.pydata.org/pandas-docs/stable/   
+https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.html
