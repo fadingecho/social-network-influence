@@ -1,0 +1,6 @@
+name,directed,weighted,V,E,activate,sketch_num,pop_size,max_generation,mc
+soc-douban,false,false,154908,327162,false,1000,100,100,500
+soc-twitter-follows,true,false,404719,713319,false,1000,100,100,500
+soc-wiki-Vote,true,false,889,2914,true,100,500,100,500
+socfb-American75,false,false,6386,217662,false,1000,500,100,500
+socfb-MIT,false,false,6402,251230,false,1000,500,100,500
