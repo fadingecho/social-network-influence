@@ -3,10 +3,10 @@ NSGA-II and CELF on influence maximization problem (IM)
 
 """
 # -*- coding: utf-8 -*-
+import copy
 import itertools
 import os
 import random
-import traceback
 import matplotlib.pyplot as plt
 import pylab
 import inspyred
@@ -16,45 +16,7 @@ from time import time
 from inspyred.ec import emo
 
 
-def IC(_G, S, p=0.5, mc=1000):
-    """
-    Input:  G:  Ex2 dataframe of directed edges. Columns: ['source','target']
-            S:  Set of seed nodes
-            p:  Disease propagation probability
-            mc: Number of Monte-Carlo simulations
-    Output: Average number of nodes influenced by the seed nodes
-    """
-
-    # Loop over the Monte-Carlo Simulations
-    spread = []
-    for _ in range(mc):
-
-        # Simulate propagation process
-        new_active, A = S[:], S[:]
-        while new_active:
-            # Get edges that flow out of each newly active node
-            temp = _G.loc[_G['source'].isin(new_active)]
-
-            # Extract the out-neighbors of those nodes
-            targets = temp['target'].tolist()
-
-            success = np.random.uniform(0, 1, len(targets)) < p
-
-            # Determine those neighbors that become infected
-            new_ones = np.extract(success, targets)
-
-            # Create a list of nodes that weren't previously activated
-            new_active = list(set(new_ones) - set(A))
-
-            # Add newly activated nodes to the set of activated nodes
-            A += new_active
-
-        spread.append(len(A))
-
-    return np.mean(spread)
-
-
-def celf(_G, p=0.6, mc=1000):
+def celf(G, num_nodes, RRS):
     """
     Inputs: G:  Ex2 dataframe of directed edges. Columns: ['source','target']
             p:  Disease propagation probability
@@ -72,12 +34,15 @@ def celf(_G, p=0.6, mc=1000):
     start_time = time()
     cost = 1
     candidates = np.unique(G['source'])
-    marg_gain = [IC(G, [c], p=p, mc=mc) / cost for c in candidates]
+
+    marg_gain = [get_influence(RRS, [int(i == c - 1) for i in range(num_nodes)]) / cost for c in candidates]
     # Create the sorted list of nodes and their marginal gain
     Q = sorted(zip(candidates, marg_gain), key=lambda x: x[1], reverse=True)
 
     # Select the first node and remove from candidate list
-    S, spread, Q = [Q[0][0]], Q[0][1], Q[1:]
+    S = [0] * num_nodes
+    spread, Q = Q[0][1], Q[1:]
+    S[Q[0][0] - 1] = 1
     greedy_trace = [0, spread]
 
     # --------------------
@@ -89,12 +54,15 @@ def celf(_G, p=0.6, mc=1000):
         print("\ri : {:3}".format(_i), end="")
         found = False
 
+        t = copy.deepcopy(S)
         while not found:
             # Recalculate spread of top node
             current = Q[0][0]
 
             # Evaluate the spread function and store the marginal gain in the list
-            Q[0] = (current, IC(G, S + [current], p=p, mc=mc) - spread)
+            t[current - 1] = 1
+            Q[0] = (current, get_influence(RRS, t) - spread)
+            t[current - 1] = 0
 
             # Re-sort the list
             Q = sorted(Q, key=lambda x: x[1], reverse=True)
@@ -103,7 +71,7 @@ def celf(_G, p=0.6, mc=1000):
             found = Q[0][0] == current
 
         # Select the next node
-        S.append(Q[0][0])
+        S[Q[0][0] - 1] = 1
         spread = Q[0][1] + spread
         greedy_trace.append(spread)
 
@@ -148,10 +116,10 @@ def get_random_RRS(_G, sketch):
     return (RRS)
 
 
-def get_influence(RRS, seeds, num_nodes):
+def get_influence(RRS, seeds):
     """
         Inputs: RRS: random RR set
-                seeds: a seed set of nodes
+                seeds: a seed set of nodes, represented by bitmap
                 num_nodes: number of the nodes in the network
         Return: a value represents the estimation of influence of the seeds
     """
@@ -161,7 +129,7 @@ def get_influence(RRS, seeds, num_nodes):
             if seeds[node - 1] > 0.5:
                 count = count + 1
                 break
-    return count / len(RRS) * num_nodes
+    return count / len(RRS) * len(seeds)
 
 
 # -------------
@@ -183,7 +151,7 @@ def _my_evaluator(candidates, args):
         for c in cs:
             if c > 0.5:
                 rec_cost = rec_cost + 1
-        influence_spread = get_influence(RRS, cs, num_users)
+        influence_spread = get_influence(RRS, cs)
         # fitness.append([-influence_spread, rec_cost])
         fitness.append(emo.Pareto([-influence_spread, rec_cost]))
     return fitness
@@ -205,15 +173,18 @@ def my_observer(population, num_generations, num_evaluations, args):
         print(' ...done')
 
 
-def EC_optimization(_G, _user_num, pop_size=100, max_generation=500, sketch_num=10000, prng=None):
+def EC_optimization(RRS, _user_num, p=0.5, pop_size=100, max_generation=500, prng=None):
     """
     my modified nsga-ii
     :param _G: network
     :param _user_num: vertex number
+    :param p: Disease propagation probability
     :param pop_size:
     :param max_generation:
     :param sketch_num: number of sketch for rr sets
-    :param prng: I don't know what it is
+    :param prng: I don't know what it is, please check the inspyred doc
+    :param use_file: If we got rr sets stored in the ./result/dataset_name/RRS-out.txt, we can use it
+
     :return: values of final archive set [[influence], [cost]]
     """
 
@@ -221,51 +192,6 @@ def EC_optimization(_G, _user_num, pop_size=100, max_generation=500, sketch_num=
     # use file
 
     start_time = time()
-
-    # step 1 : get rr sets
-    # if we've already got the rr sets for this network
-    use_file = False
-    RRS = []
-    if not use_file:
-        # create sketch
-        sketches = []
-        p = 0.5
-        print("creating sketch")
-        print("\r{:3}%".format(0), end="")
-        for _i in range(0, sketch_num):
-            g = _G.copy().loc[np.random.uniform(0, 1, _G.shape[0]) < p]
-            sketches.append(g)
-            print("\r{:3}%".format((_i + 1) / sketch_num * 100), end="")
-        print("\n")
-
-        #
-        # create RRS according to sketches
-        RRS = []
-        print("creating RRS")
-        print("\r{:3}%".format(0), end="")
-        for _i in range(0, sketch_num):
-            for _ in range(0, 10):
-                r = get_random_RRS(_G=_G, sketch=sketches[_i])
-                RRS.append(r)
-            print("\r{:3}%".format((_i + 1) / sketch_num * 100), end="")
-        print("\n")
-        try:
-            np.savetxt(result_path + dataset_name + "/RRS-out.txt", RRS, delimiter=", ", fmt="% s")
-        except FileNotFoundError:
-            os.makedirs(result_path + dataset_name)
-            np.savetxt(result_path + dataset_name + "/RRS-out.txt", RRS, delimiter=", ", fmt="% s")
-    else:
-        try:
-            RRS_file = open(result_path + dataset_name + "RRS-out.txt")
-        except FileNotFoundError:
-            print("RRS-out.txt lost!")
-            traceback.print_exc()
-
-        for rf in RRS_file.readlines():
-            rf = rf.strip('[]\n')
-            RRS.append(list(map(int, rf.split(","))))
-        print("read RRS from file")
-
     # start optimization
     if prng is None:
         prng = random.Random()
@@ -291,13 +217,13 @@ def EC_optimization(_G, _user_num, pop_size=100, max_generation=500, sketch_num=
     print(str(time() - start_time) + 's\n')
 
     # process the result
-    try:
-        np.savetxt(result_path + dataset_name + "/pop.txt", ea.population, delimiter=", ", fmt="% s")
-        np.savetxt(result_path + dataset_name + "/arc.txt", ea.archive, delimiter=", ", fmt="% s")
-    except FileNotFoundError:
-        os.makedirs(result_path + dataset_name)
-        np.savetxt(result_path + dataset_name + "/pop.txt", ea.population, delimiter=", ", fmt="% s")
-        np.savetxt(result_path + dataset_name + "/arc.txt", ea.archive, delimiter=", ", fmt="% s")
+    # try:
+    #     np.savetxt(result_path + dataset_name + "/pop.txt", ea.population, delimiter=", ", fmt="% s")
+    #     np.savetxt(result_path + dataset_name + "/arc.txt", ea.archive, delimiter=", ", fmt="% s")
+    # except FileNotFoundError:
+    #     os.makedirs(result_path + dataset_name)
+    #     np.savetxt(result_path + dataset_name + "/pop.txt", ea.population, delimiter=", ", fmt="% s")
+    #     np.savetxt(result_path + dataset_name + "/arc.txt", ea.archive, delimiter=", ", fmt="% s")
 
     _x = []
     _y = []
@@ -308,7 +234,46 @@ def EC_optimization(_G, _user_num, pop_size=100, max_generation=500, sketch_num=
     return [_x, _y]
 
 
-def show_result(results, labels):
+def get_RRS(use_file, sketch_num, G, name='', p=0.5):
+    RRS = []
+    if not use_file:
+        # create sketch
+        sketches = []
+        print("creating sketch")
+        print("\r{:3}%".format(0), end="")
+        for _i in range(0, sketch_num):
+            g = G.copy().loc[np.random.uniform(0, 1, G.shape[0]) < p]
+            sketches.append(g)
+            print("\r{:3}%".format((_i + 1) / sketch_num * 100), end="")
+        print("\n")
+
+        #
+        # create RRS according to sketches
+        RRS = []
+        print("creating RRS")
+        print("\r{:3}%".format(0), end="")
+        for _i in range(0, sketch_num):
+            for _ in range(0, 10):
+                r = get_random_RRS(_G=G, sketch=sketches[_i])
+                RRS.append(r)
+            print("\r{:3}%".format((_i + 1) / sketch_num * 100), end="")
+        print("\n")
+        try:
+            np.savetxt(result_path + name + "/RRS-out.txt", RRS, delimiter=", ", fmt="% s")
+        except FileNotFoundError:
+            os.makedirs(result_path + name)
+            np.savetxt(result_path + name + "/RRS-out.txt", RRS, delimiter=", ", fmt="% s")
+    else:
+        RRS_file = open(result_path + name + "/RRS-out.txt")
+        for rf in RRS_file.readlines():
+            rf = rf.strip('[]\n')
+            RRS.append(list(map(int, rf.split(","))))
+        print("read RRS from file, size : " + str(len(RRS)))
+
+    return RRS
+
+
+def show_result(results, labels, name):
     color = ['b', 'r']
 
     fig, ax = plt.subplots()
@@ -325,23 +290,17 @@ def show_result(results, labels):
     ax.grid(True)
 
     try:
-        pylab.savefig(result_path + dataset_name + '/result.pdf', format='pdf')
+        pylab.savefig(result_path + name + '/result.pdf', format='pdf')
     except FileNotFoundError:
-        os.makedirs(result_path + dataset_name)
-        pylab.savefig(result_path + dataset_name + '/result.pdf', format='pdf')
+        os.makedirs(result_path + name)
+        pylab.savefig(result_path + name + '/result.pdf', format='pdf')
 
 
-# global var
-result_path = "./result/"
-datasets_path = "./datasets/"
-config_file = "config.csv"
-dataset_name = ""
-
-if __name__ == "__main__":
+def main():
     # read config file
-    my_datasets = pd.read_csv(datasets_path + config_file, delimiter=',', index_col=False)
+    my_datasets = pd.read_csv(datasets_path + config_file, delimiter=',', index_col=False, skipinitialspace=True)
     print("read config file")
-    print(my_datasets[['name', 'activate', 'V', 'E']])
+    print(my_datasets[['name', 'activate', 'V', 'E', "use_file"]])
     print("==========")
 
     for idx in my_datasets.index:
@@ -354,8 +313,8 @@ if __name__ == "__main__":
             continue
 
         dataset_name = str(my_datasets['name'][idx])
-        user_num = int(my_datasets['V'][idx])
-        print(dataset_name + "\nuser_num is : " + str(user_num))
+        num_user = int(my_datasets['V'][idx])
+        print(dataset_name + "\nuser_num is : " + str(num_user))
 
         # create graph
         idx_G = ['source', 'target']
@@ -364,7 +323,8 @@ if __name__ == "__main__":
             delimiter=" ",
             index_col=False,
             names=idx_G,
-            skiprows=2)
+            skiprows=2
+        )
 
         # if network is directed
         if not my_datasets["directed"][idx]:
@@ -374,17 +334,28 @@ if __name__ == "__main__":
             G_copy.columns = ['source', 'target']
             G = pd.concat([G, G_copy], ignore_index=True)
 
+        RRS = get_RRS(my_datasets['use_file'][idx], int(my_datasets['sketch_num'][idx]), G, name=dataset_name, p=0.5)
+
         # run the algorithms
-        result_EC = EC_optimization(
-            G,
-            user_num,
-            sketch_num=int(my_datasets['sketch_num'][idx]),
-            pop_size=int(my_datasets['pop_size'][idx]),
-            max_generation=int(my_datasets['max_generation'][idx])
-        )
-        result_celf = celf(G, mc=int(my_datasets['mc'][idx]))
+        # result_EC = EC_optimization(
+        #     RRS,
+        #     num_user,
+        #     pop_size=int(my_datasets['pop_size'][idx]),
+        #     max_generation=int(my_datasets['max_generation'][idx])
+        # )
+        result_celf = celf(G, num_nodes=num_user, RRS=RRS)
 
         # visualization
-        show_result([result_EC, result_celf],
-                    ["NSGA-II", "CELF"])
+        # show_result([result_EC, result_celf],
+        #             ["NSGA-II", "CELF"], name=dataset_name)
+        show_result([result_celf],
+                    ["CELF"], name=dataset_name)
         print("\n===============")
+
+
+# global var
+result_path = "./result/"
+datasets_path = "./datasets/"
+config_file = "config.csv"
+
+main()

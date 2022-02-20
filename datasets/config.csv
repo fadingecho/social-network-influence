@@ -1,6 +1,7 @@
-name,directed,weighted,V,E,activate,sketch_num,pop_size,max_generation,mc
-soc-douban,false,false,154908,327162,false,1000,100,100,500
-soc-twitter-follows,true,false,404719,713319,false,1000,100,100,500
-soc-wiki-Vote,true,false,889,2914,true,100,500,100,500
-socfb-American75,false,false,6386,217662,false,1000,500,100,500
-socfb-MIT,false,false,6402,251230,false,1000,500,100,500
+name,directed,weighted,V,E,activate,sketch_num,pop_size,max_generation,mc,use_file
+soc-douban,false,false,154908,327162,false,1000,100,100,500,false
+soc-twitter-follows,true,false,404719,713319,false,1000,100,100,500,false
+soc-wiki-Vote,true,false,889,2914,false,500,100,100,1000,true
+socfb-American75,true,false,6386,217662,false,100,2000,100,300,true
+socfb-MIT,true,false,6402,251230,false,1000,2000,100,300,false
+socfb-Caltech36,false,false,769,16656,true,1000,2000,100,10000,true
