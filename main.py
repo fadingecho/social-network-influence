@@ -4,6 +4,7 @@ NSGA-II and CELF on influence maximization problem (IM)
 """
 # -*- coding: utf-8 -*-
 import copy
+import datetime
 import itertools
 import os
 import random
@@ -16,7 +17,45 @@ from time import time
 from inspyred.ec import emo
 
 
-def celf(G, num_nodes, RRS):
+def IC(_G, S, p=0.5, mc=1000):
+    """
+    Input:  G:  Ex2 dataframe of directed edges. Columns: ['source','target']
+            S:  Set of seed nodes
+            p:  Disease propagation probability
+            mc: Number of Monte-Carlo simulations
+    Output: Average number of nodes influenced by the seed nodes
+    """
+
+    # Loop over the Monte-Carlo Simulations
+    spread = []
+    for _ in range(mc):
+
+        # Simulate propagation process
+        new_active, A = S[:], S[:]
+        while new_active:
+            # Get edges that flow out of each newly active node
+            temp = _G.loc[_G['source'].isin(new_active)]
+
+            # Extract the out-neighbors of those nodes
+            targets = temp['target'].tolist()
+
+            success = np.random.uniform(0, 1, len(targets)) < p
+
+            # Determine those neighbors that become infected
+            new_ones = np.extract(success, targets)
+
+            # Create a list of nodes that weren't previously activated
+            new_active = list(set(new_ones) - set(A))
+
+            # Add newly activated nodes to the set of activated nodes
+            A += new_active
+
+        spread.append(len(A))
+
+    return np.mean(spread)
+
+
+def celf_mc(G, p=0.5, mc=1000):
     """
     Inputs: G:  Ex2 dataframe of directed edges. Columns: ['source','target']
             p:  Disease propagation probability
@@ -30,7 +69,69 @@ def celf(G, num_nodes, RRS):
 
     # Compute marginal gain for each node
     # cost is equal
-    print("start celf")
+    print("start celf_mc")
+    start_time = time()
+    cost = 1
+    candidates = np.unique(G['source'])
+    marg_gain = [IC(G, [c], p=p, mc=mc) / cost for c in candidates]
+    # Create the sorted list of nodes and their marginal gain
+    Q = sorted(zip(candidates, marg_gain), key=lambda x: x[1], reverse=True)
+
+    # Select the first node and remove from candidate list
+    S, spread, Q = [Q[0][0]], Q[0][1], Q[1:]
+    greedy_trace = [spread]
+
+    # --------------------
+    # Find the next k-1 nodes using the CELF list-sorting procedure
+    # --------------------
+
+    print("\ri : {:3}".format(0), end="")
+    for _i in range(len(Q)):
+        print("\ri : {:3}".format(_i), end="")
+        found = False
+
+        while not found:
+            # Recalculate spread of top node
+            current = Q[0][0]
+
+            # Evaluate the spread function and store the marginal gain in the list
+            Q[0] = (current, IC(G, S + [current], p=p, mc=mc) - spread)
+
+            # Re-sort the list
+            Q = sorted(Q, key=lambda x: x[1], reverse=True)
+
+            # Check if previous top node stayed on top after the sort
+            found = Q[0][0] == current
+
+        # Select the next node
+        S.append(Q[0][0])
+        spread = Q[0][1] + spread
+        greedy_trace.append(spread)
+
+        # Remove the selected node from the list
+        Q = Q[1:]
+
+    print(" ...done")
+    print(str(time() - start_time) + 's')
+
+    return [greedy_trace, [_i + 1 for _i in range(len(greedy_trace))]]
+
+
+def celf_RRS(G, num_nodes, RRS):
+    """
+    Inputs: G:  Ex2 dataframe of directed edges. Columns: ['source','target']
+            p:  Disease propagation probability
+            mc: Number of Monte-Carlo simulations
+    Return: greedy_trace: list[cost] = influence
+    """
+
+    # --------------------
+    # Find the first node with greedy algorithm
+    # --------------------
+
+    # Compute marginal gain for each node
+    # cost is equal
+    print("start celf_RRS")
     start_time = time()
     cost = 1
     candidates = np.unique(G['source'])
@@ -43,7 +144,7 @@ def celf(G, num_nodes, RRS):
     S = [0] * num_nodes
     spread, Q = Q[0][1], Q[1:]
     S[Q[0][0] - 1] = 1
-    greedy_trace = [0, spread]
+    greedy_trace = [spread]
 
     # --------------------
     # Find the next k-1 nodes using the CELF list-sorting procedure
@@ -81,7 +182,7 @@ def celf(G, num_nodes, RRS):
     print(" ...done")
     print(str(time() - start_time) + 's')
 
-    return [greedy_trace, [_i for _i in range(len(greedy_trace))]]
+    return [greedy_trace, [_i + 1 for _i in range(len(greedy_trace))]]
 
 
 def get_random_RRS(_G, sketch):
@@ -198,6 +299,7 @@ def EC_optimization(RRS, _user_num, p=0.5, pop_size=100, max_generation=500, prn
         prng.seed(time())
 
     ea = inspyred.ec.emo.NSGA2(prng)
+    # blend arithmetic think deep in binary
     ea.variator = [
         inspyred.ec.variators.blend_crossover,
         inspyred.ec.variators.gaussian_mutation
@@ -213,7 +315,8 @@ def EC_optimization(RRS, _user_num, p=0.5, pop_size=100, max_generation=500, prn
         maximize=False,
         max_generations=max_generation,
         num_users=_user_num,
-        RRS=RRS)
+        RRS=RRS,
+        blx_alpha=1.0)
     print(str(time() - start_time) + 's\n')
 
     # process the result
@@ -274,7 +377,7 @@ def get_RRS(use_file, sketch_num, G, name='', p=0.5):
 
 
 def show_result(results, labels, name):
-    color = ['b', 'r']
+    color = ['b', 'r', 'g']
 
     fig, ax = plt.subplots()
     ax.set_xlabel('Influence spread')
@@ -282,18 +385,21 @@ def show_result(results, labels, name):
     for _i in range(len(results)):
         ax.scatter(results[_i][0],
                    results[_i][1],
-                   s=1,
+                   s=3,
                    c=color[_i],
-                   alpha=0.5,
+                   alpha=0.8,
                    label=labels[_i])
     ax.legend()
     ax.grid(True)
-
+    plt.title(name)
+    # plt.show()
+    file_name = result_path + name + '/result' + \
+                str(datetime.datetime.now().minute) + str(datetime.datetime.now().hour) + '.pdf'
     try:
-        pylab.savefig(result_path + name + '/result.pdf', format='pdf')
+        pylab.savefig(file_name, format='pdf')
     except FileNotFoundError:
         os.makedirs(result_path + name)
-        pylab.savefig(result_path + name + '/result.pdf', format='pdf')
+        pylab.savefig(file_name, format='pdf')
 
 
 def main():
@@ -336,20 +442,22 @@ def main():
 
         RRS = get_RRS(my_datasets['use_file'][idx], int(my_datasets['sketch_num'][idx]), G, name=dataset_name, p=0.5)
 
-        # run the algorithms
-        # result_EC = EC_optimization(
-        #     RRS,
-        #     num_user,
-        #     pop_size=int(my_datasets['pop_size'][idx]),
-        #     max_generation=int(my_datasets['max_generation'][idx])
-        # )
-        result_celf = celf(G, num_nodes=num_user, RRS=RRS)
-
+        # run algorithms
+        result_EC = EC_optimization(
+            RRS,
+            num_user,
+            pop_size=int(my_datasets['pop_size'][idx]),
+            max_generation=int(my_datasets['max_generation'][idx])
+        )
+        # result_celf = celf_mc(G, p=0.5, mc=10000)
+        # result_celf_rrs = celf_RRS(G, num_user, RRS)
         # visualization
-        # show_result([result_EC, result_celf],
-        #             ["NSGA-II", "CELF"], name=dataset_name)
-        show_result([result_celf],
-                    ["CELF"], name=dataset_name)
+        # show_result([result_EC, result_celf, result_celf_rrs],
+        #             ["NSGA-II", "greedy-mc", "greedy-rrs"], name=dataset_name)
+        # show_result([result_celf],
+        #             ["CELF"], name=dataset_name)
+        show_result([result_EC],
+                    ["NSGA-II"], name=dataset_name)
         print("\n===============")
 
 
