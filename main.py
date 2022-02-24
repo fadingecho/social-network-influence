@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from time import time
 from inspyred.ec import emo
+from inspyred.ec.variators import crossover
 
 
 def IC(_G, S, p=0.5, mc=1000):
@@ -274,17 +275,42 @@ def my_observer(population, num_generations, num_evaluations, args):
         print(' ...done')
 
 
+@crossover
+def cross(random, mom, dad, args):
+    blx_points = args.setdefault('blx_points', None)
+    crossover_rate = args.setdefault('crossover_rate', 1.0)
+    bounder = args['_ec'].bounder
+    children = []
+    if random.random() < crossover_rate:
+        bro = copy.copy(dad)
+        sis = copy.copy(mom)
+        if blx_points is None:
+            blx_points = list(range(min(len(bro), len(sis))))
+        for i in blx_points:
+            smallest, largest = min(mom[i], dad[i]), max(mom[i], dad[i])
+            avg = (mom[i] + dad[i]) / 2
+            bro[i] = avg + random.random() * 0.3
+            sis[i] = avg - random.random() * 0.3
+        bro = bounder(bro, args)
+        sis = bounder(sis, args)
+        children.append(bro)
+        children.append(sis)
+    else:
+        children.append(mom)
+        children.append(dad)
+    return children
+
+
 def EC_optimization(RRS, _user_num, p=0.5, pop_size=100, max_generation=500, prng=None):
     """
     my modified nsga-ii
+    :param RRS:
     :param _G: network
     :param _user_num: vertex number
     :param p: Disease propagation probability
     :param pop_size:
     :param max_generation:
-    :param sketch_num: number of sketch for rr sets
     :param prng: I don't know what it is, please check the inspyred doc
-    :param use_file: If we got rr sets stored in the ./result/dataset_name/RRS-out.txt, we can use it
 
     :return: values of final archive set [[influence], [cost]]
     """
@@ -301,7 +327,7 @@ def EC_optimization(RRS, _user_num, p=0.5, pop_size=100, max_generation=500, prn
     ea = inspyred.ec.emo.NSGA2(prng)
     # blend arithmetic think deep in binary
     ea.variator = [
-        inspyred.ec.variators.blend_crossover,
+        cross,
         inspyred.ec.variators.gaussian_mutation
     ]
     ea.terminator = inspyred.ec.terminators.generation_termination
