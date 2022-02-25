@@ -469,21 +469,21 @@ def main():
         RRS = get_RRS(my_datasets['use_file'][idx], int(my_datasets['sketch_num'][idx]), G, name=dataset_name, p=0.5)
 
         # run algorithms
-        result_EC = EC_optimization(
-            RRS,
-            num_user,
-            pop_size=int(my_datasets['pop_size'][idx]),
-            max_generation=int(my_datasets['max_generation'][idx])
-        )
-        # result_celf = celf_mc(G, p=0.5, mc=10000)
-        # result_celf_rrs = celf_RRS(G, num_user, RRS)
+        # result_EC = EC_optimization(
+        #     RRS,
+        #     num_user,
+        #     pop_size=int(my_datasets['pop_size'][idx]),
+        #     max_generation=int(my_datasets['max_generation'][idx])
+        # )
+        # result_celf = celf_mc(G, p=0.5, mc=100)
+        result_celf_rrs = celf_RRS(G, num_user, copy.deepcopy(RRS))
         # visualization
         # show_result([result_EC, result_celf, result_celf_rrs],
         #             ["NSGA-II", "greedy-mc", "greedy-rrs"], name=dataset_name)
-        # show_result([result_celf],
-        #             ["CELF"], name=dataset_name)
-        show_result([result_EC],
-                    ["NSGA-II"], name=dataset_name)
+        # show_result([result_celf_rrs, result_celf],
+        #             ["CELF", "CELF-mc"], name=dataset_name)
+        show_result([result_celf_rrs],
+                    ["greedy"], name=dataset_name)
         print("\n===============")
 
 
