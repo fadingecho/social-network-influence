@@ -3,28 +3,47 @@ import os
 import numpy as np
 import pandas as pd
 
+import utils
+
 para_l = 1
 para_epsilon = 0.3
+
+
+def width_of_RR_set(R, in_degrees):
+    """
+        Inputs: R : a random rr set
+                in_degrees : in_degrees of nodes sorted by degree
+        Return: width of R, sum of in-degrees
+    """
+    width = 0
+    for node in R:
+        try:
+            width = width + in_degrees[node]
+        except KeyError:
+            width = width
+
+    return width
 
 
 class my_IM:
     result_path = "./result/"
     datasets_path = "./datasets/"
     dataset_name = None
-    G = None
-    V = None
-    E = None
 
-    p = 0.5
-    RRS = None
+    G = None        # graph stored as edge list
+    V = None        # num of nodes
+    E = None        # num of directed edge
+    p = 0.5         # propagation probability
+    RRS = None      # random rr sets, size estimated by TIM
 
-    weighted = False
-    directed = False
+    weighted = False    # if graph is weighted
+    directed = False    # if graph is directed
 
-    k = None
-    theta = None
+    k = None            # k-seed users in IMP
+    theta = None        # theta in TIM
 
     def __init__(self, dataset_name, k=50, weighted=False, directed=False):
+        # read graph info
         self.dataset_name = dataset_name
         G_info = pd.read_csv(
             self.datasets_path + dataset_name + '.mtx',
@@ -37,6 +56,7 @@ class my_IM:
         self.V = G_info.iat[0, 0]
         self.E = G_info.iat[0, 2]
 
+        # read edges
         self.G = pd.read_csv(
             self.datasets_path + dataset_name + '.mtx',
             delimiter=" ",
@@ -46,10 +66,15 @@ class my_IM:
             skiprows=2
         )
 
-        self.k = k
+        if k == 0:
+            self.k = self.V
+        else:
+            self.k = k
+
         self.weighted = weighted
         self.directed = directed
 
+        # convert undirected graph to directed
         if directed:
             print("this data is undirected")
             G_copy = self.G.copy(deep=True)
@@ -59,9 +84,10 @@ class my_IM:
 
             self.E = self.E * 2
 
+        # if the existing rrs file is not large enough, create a new one
         self.theta = self.get_theta(p=self.p)
         self.RRS = self.read_RRS()
-        if abs(len(self.RRS) - self.theta) > 3000:
+        if abs(len(self.RRS) - self.theta) > 5000:
             self.RRS = self.generate_RRS(p=self.p)
             self.save_RRS()
 
@@ -82,9 +108,8 @@ class my_IM:
             os.makedirs(self.result_path + self.dataset_name)
             np.savetxt(self.result_path + self.dataset_name + "/RRS-out.txt", self.RRS, delimiter=", ", fmt="% s")
 
-    def get_random_RRS(self, p=0.5):
+    def get_a_random_RRS(self, p=0.5):
         """
-        Inputs: G:  Ex2 dataframe of directed edges. Columns: ['source','target']
         Return: A random reverse reachable set expressed as a list of nodes
         """
 
@@ -116,22 +141,22 @@ class my_IM:
         return RRS
 
     def generate_RRS(self, p=0.5):
+        """
+            Return: a list of RRS, len = theta
+        """
         RRS = []
 
-        print("creating RRS")
-        print("\r{:3}%".format(0), end="")
+        utils.show_process_bar("reverse sampling :", 0, self.theta)
         for _i in range(0, self.theta):
-            r = self.get_random_RRS(p=p)
+            r = self.get_a_random_RRS(p=p)
             RRS.append(r)
-            print("\r{:3}%".format((_i + 1) / self.theta * 100), end="")
-        print("\n")
-
+            utils.show_process_bar("reverse sampling :", _i, self.theta)
+        utils.process_end("")
         return RRS
 
     def IC(self, S, p=0.5, mc=10000):
         """
-        Input:  G:  Ex2 dataframe of directed edges. Columns: ['source','target']
-                S:  Set of seed nodes
+        Input:  S:  Set of seed nodes
                 p:  Disease propagation probability
                 mc: Number of Monte-Carlo simulations
         Output: Average number of nodes influenced by the seed nodes
@@ -165,36 +190,35 @@ class my_IM:
 
         return np.mean(spread)
 
-    def width_of_RR_set(self, R):
-        # TODO need to test it
-        # TODO maybe a table of income degree
-        vc = self.G['target'].value_counts()
-        width = 0
-        for node in R:
-            try:
-                width = width + vc[node]
-            except KeyError:
-                width = width
-
-        return width
-
     def KPT_estimation(self, p=0.5):
+        """
+        refer to TIM
+        :param p: propagation probability
+        :return: KPT star
+        """
         G = self.G
         n = self.V
         m = self.E
+
+        in_degrees = G['target'].value_counts()
 
         for i in range(1, int(np.log2(n) - 1)):
             ci = 6 * para_l * np.log(n) + 6 * np.log(np.log2(n)) * np.exp2(i)
             _sum = 0
             for j in range(1, int(ci)):
-                R = self.get_random_RRS(p=p)
-                kR = 1 - (1 - self.width_of_RR_set(R) / m) ** self.k
+                R = self.get_a_random_RRS(p=p)
+                kR = 1 - (1 - width_of_RR_set(R, in_degrees) / m) ** self.k
                 _sum = _sum + kR
             if _sum / ci > 1 / np.exp2(i):
                 return n * _sum / (2 * ci)
         return 1
 
     def get_theta(self, p=0.5):
+        """
+        refer to TIM
+        :param p: propagation probability
+        :return: theta in TIM
+        """
         kpt = self.KPT_estimation(p=p)
         _lambda = (8 + 2 * para_epsilon) * self.V * (
                 para_l * np.log(self.V) + np.log(float(np.math.comb(self.V, self.k))) + np.log(2)) * para_epsilon ** (

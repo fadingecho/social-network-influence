@@ -7,6 +7,8 @@ import inspyred
 from inspyred.ec import emo
 from inspyred.ec.variators import crossover
 
+import utils
+
 
 def my_generator(random, args):
     num_users = args.get('num_users')
@@ -54,13 +56,15 @@ my_bound.upper_bound = itertools.repeat(1)
 
 
 def my_observer(population, num_generations, num_evaluations, args):
-    print("\rgen : {:3}".format(num_generations), end="")
+    max_gen = args.get('max_generations')
+    utils.show_process_bar("gen :", num_generations, max_gen)
     if args.get('max_generations') == num_generations:
-        print(' ...done')
+        utils.process_end("")
 
 
 @crossover
 def my_cross(random, mom, dad, args):
+    # TODO also mutation
     blx_points = args.setdefault('blx_points', None)
     crossover_rate = args.setdefault('crossover_rate', 1.0)
     bounder = args['_ec'].bounder

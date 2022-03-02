@@ -1,8 +1,8 @@
 import copy
 from collections import Counter
 from time import time
-
 import numpy as np
+import utils
 
 
 def CELF(IM_dataset, p=0.5, mc=10000):
@@ -16,14 +16,15 @@ def CELF(IM_dataset, p=0.5, mc=10000):
     # --------------------
     # Find the first node with greedy algorithm
     # --------------------
-
-    # Compute marginal gain for each node
-    # cost is equal
     print("start celf_mc")
+
     start_time = time()
+    # cost is equal
     cost = 1
+    # Compute marginal gain for each node
     candidates = np.unique(IM_dataset.G['source'])
     marg_gain = [IM_dataset.IC([c], p=p, mc=mc) / cost for c in candidates]
+
     # Create the sorted list of nodes and their marginal gain
     Q = sorted(zip(candidates, marg_gain), key=lambda x: x[1], reverse=True)
 
@@ -35,9 +36,10 @@ def CELF(IM_dataset, p=0.5, mc=10000):
     # Find the next k-1 nodes using the CELF list-sorting procedure
     # --------------------
 
-    print("\ri : {:3}".format(0), end="")
-    for _i in range(len(Q)):
-        print("\ri : {:3}".format(_i), end="")
+    k = len(Q)
+    utils.show_process_bar("CELF", 0, k)
+    for _i in range(k):
+        utils.show_process_bar("CELF", _i, k)
         found = False
 
         while not found:
@@ -60,24 +62,21 @@ def CELF(IM_dataset, p=0.5, mc=10000):
 
         # Remove the selected node from the list
         Q = Q[1:]
-
-    print(" ...done")
-    print(str(time() - start_time) + 's')
+    utils.process_end(str(time() - start_time) + 's')
 
     return [greedy_trace, [_i + 1 for _i in range(len(greedy_trace))]]
 
 
-def node_selection(IM_dataset, p=0.5):
+def node_selection(IM_dataset):
+    """
+        Inputs: IM_dataset:  provide estimated RRS, check IMP.py
+        Return: greedy_trace: list[cost] = influence
+    """
 
     # Generate theta random RR sets and insert them into set_R
     set_R = IM_dataset.RRS
 
-    # code below is wrong
-    # for _ in range(0, int(theta)):
-    #     set_R.append(get_random_RRS(G, p=p))
-
-    # S_k as the solution, and I need another list to record the trace of S_k
-
+    # S_k is the final solution
     S_k = []
     trace = []
 
@@ -105,23 +104,27 @@ def node_selection(IM_dataset, p=0.5):
 
 
 def TIM(IM_dataset, p=0.5):
-    # estimation part is regarded as part of the problem, check it in the class IMP.py
+    """
+        Inputs: IM_dataset:  provide estimated RRS, check IMP.py
+                p:  Disease propagation probability
+        Return: [influence, cost], cost increases from 1 and ends close to the max(cost)
+    """
+    # estimation part is regarded as part of the problem model, check it in the class IMP.py
     influence = []
     cost = []
-    trace = node_selection(IM_dataset, p=p)
+    trace = node_selection(IM_dataset)
 
-    print("start IC : ")
-    step = int(len(trace) / 10)
+    # to save time, I calculate the spread of Monte-Carlo with a fixed step length
+    len_trace = len(trace)
+    step = int(len_trace / 15)
     pos = 0
-    while pos - 1 < len(trace):
-        print("pos : " + str(pos))
-        try:
-            influence.append(IM_dataset.IC(trace[pos], p=0.5, mc=10000))
-        except IndexError:
-            print(str(pos) + " " + str(len(trace)))
+
+    while pos < len_trace:
+        utils.show_process_bar("TIM IC", pos + 1, len_trace)
+
+        influence.append(IM_dataset.IC(trace[pos], p=0.5, mc=10000))
         cost.append(len(trace[pos]))
-
         pos = pos + step
-
+    utils.process_end("")
     return [influence, cost]
 
