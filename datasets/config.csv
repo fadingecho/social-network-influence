@@ -1,5 +1,5 @@
-name,directed,weighted,V,E,activate,sketch_num,pop_size,max_generation,mc,use_file
-soc-wiki-Vote,true,false,889,2914,true,100,100,200,1000,false
-socfb-Caltech36,false,false,769,16656,false,100,100,200,10000,false
-soc-dolphins,false,false,62,159,false,500,100,200,10000,false
-socfb-Reed98,false,false,962,18812,true,100,100,200,10000,false
+name,directed,weighted,activate
+soc-wiki-Vote,true,false,false
+socfb-Caltech36,false,false,false
+soc-dolphins,false,false,true
+socfb-Reed98,false,false,false
