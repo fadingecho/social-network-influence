@@ -1,8 +1,5 @@
 name,directed,weighted,V,E,activate,sketch_num,pop_size,max_generation,mc,use_file
-soc-douban,false,false,154908,327162,false,1000,100,100,500,false
-soc-twitter-follows,true,false,404719,713319,false,1000,100,100,500,false
-soc-wiki-Vote,true,false,889,2914,false,100,200,500,1000,false
-socfb-American75,true,false,6386,217662,true,1000,100,200,300,false
-socfb-MIT,true,false,6402,251230,false,70,1000,200,300,false
-socfb-Caltech36,false,false,769,16656,false,100,100,500,10000,false
-soc-dolphins,false,false,62,159,false,1000,100,200,10000,true
+soc-wiki-Vote,true,false,889,2914,true,100,100,200,1000,false
+socfb-Caltech36,false,false,769,16656,false,100,100,200,10000,false
+soc-dolphins,false,false,62,159,false,500,100,200,10000,false
+socfb-Reed98,false,false,962,18812,true,100,100,200,10000,false
