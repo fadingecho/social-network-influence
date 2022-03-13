@@ -25,26 +25,28 @@ def width_of_RR_set(R, in_degrees):
     return width
 
 
-class my_IM:
+class IMP:
     result_path = "./result/"
     datasets_path = "./datasets/"
     dataset_name = None
+    rrs_path = None
 
-    G = None        # graph stored as edge list
-    V = None        # num of nodes
-    E = None        # num of directed edge
-    p = 0.5         # propagation probability
-    RRS = None      # random rr sets, size estimated by TIM
+    G = None  # graph stored as edge list
+    V = None  # num of nodes
+    E = None  # num of directed edge
+    p = 0.3  # propagation probability
+    RRS = None  # random rr sets, size estimated by TIM
 
-    weighted = False    # if graph is weighted
-    directed = False    # if graph is directed
+    weighted = False  # if graph is weighted
+    directed = False  # if graph is directed
 
-    k = None            # k-seed users in IMP
-    theta = None        # theta in TIM
+    k = 0  # k-seed users in IMP
+    theta = None  # theta in TIM
 
-    def __init__(self, dataset_name, k=50, weighted=False, directed=False):
+    def __init__(self, dataset_name, k, weighted, directed):
         # read graph info
         self.dataset_name = dataset_name
+        self.rrs_path = self.result_path + self.dataset_name + "/RRS-out" + "{:.1}".format(self.p) + ".txt"
         G_info = pd.read_csv(
             self.datasets_path + dataset_name + '.mtx',
             index_col=False,
@@ -68,6 +70,8 @@ class my_IM:
 
         if k == 0:
             self.k = self.V
+        elif k < 1:
+            self.k = int(self.V * k)
         else:
             self.k = k
 
@@ -76,7 +80,7 @@ class my_IM:
 
         # convert undirected graph to directed
         if directed:
-            print("this data is undirected")
+            print("this network is undirected")
             G_copy = self.G.copy(deep=True)
             G_copy[['target', 'source']] = G_copy[['source', 'target']]
             G_copy.columns = ['source', 'target']
@@ -84,29 +88,40 @@ class my_IM:
 
             self.E = self.E * 2
 
-        # if the existing rrs file is not large enough, create a new one
         self.theta = self.get_theta(p=self.p)
+
+    def load_RRS(self):
+        # if the existing rrs file is not large enough, extend to a new one
+        # else we just shrink the file to fit theta
         self.RRS = self.read_RRS()
-        if abs(len(self.RRS) - self.theta) > 5000:
-            self.RRS = self.generate_RRS(p=self.p)
+        if len(self.RRS) - self.theta < -100:
+            self.RRS.extend(self.generate_RRS(num=self.theta - len(self.RRS), p=self.p))
             self.save_RRS()
+        elif len(self.RRS) - self.theta > 100:
+            self.RRS = self.RRS[:self.theta]
 
     def read_RRS(self):
         RRS = []
-        RRS_file = open(self.result_path + self.dataset_name + "/RRS-out.txt")
+        try:
+            RRS_file = open(
+                self.rrs_path)
+        except FileNotFoundError:
+            return RRS  # len(RRS) = 0
+
         for rf in RRS_file.readlines():
             rf = rf.strip('[]\n')
             RRS.append(list(map(int, rf.split(","))))
         print("read RRS from file, size : " + str(len(RRS)))
+        print("theta is : " + str(self.theta))
 
         return RRS
 
     def save_RRS(self):
         try:
-            np.savetxt(self.result_path + self.dataset_name + "/RRS-out.txt", self.RRS, delimiter=", ", fmt="% s")
+            np.savetxt(self.rrs_path, self.RRS, delimiter=", ", fmt="% s")
         except FileNotFoundError:
             os.makedirs(self.result_path + self.dataset_name)
-            np.savetxt(self.result_path + self.dataset_name + "/RRS-out.txt", self.RRS, delimiter=", ", fmt="% s")
+            np.savetxt(self.rrs_path, self.RRS, delimiter=", ", fmt="% s")
 
     def get_a_random_RRS(self, p=0.5):
         """
@@ -140,17 +155,19 @@ class my_IM:
 
         return RRS
 
-    def generate_RRS(self, p=0.5):
+    def generate_RRS(self, num=None, p=0.5):
         """
-            Return: a list of RRS, len = theta
+            Return: a list of RRS, len = num
         """
+        if num is None:
+            num = self.theta
         RRS = []
 
-        utils.show_process_bar("reverse sampling :", 0, self.theta)
-        for _i in range(0, self.theta):
+        utils.show_process_bar("reverse sampling :", 0, num)
+        for _i in range(0, num):
             r = self.get_a_random_RRS(p=p)
             RRS.append(r)
-            utils.show_process_bar("reverse sampling :", _i, self.theta)
+            utils.show_process_bar("reverse sampling :", _i, num)
         utils.process_end("")
         return RRS
 

@@ -125,6 +125,17 @@ def TIM(IM_dataset, p=0.5):
         influence.append(IM_dataset.IC(trace[pos], p=0.5, mc=10000))
         cost.append(len(trace[pos]))
         pos = pos + step
+
+    if pos < len_trace - 1:
+        influence.append(IM_dataset.IC(trace[len_trace-1], p=0.5, mc=10000))
+        cost.append(len(trace[len_trace-1]))
+    # pos = pos + 1
+    # max_influence = influence[len(influence) - 1]
+    # while pos <= IM_dataset.k:
+    #     influence.append(max_influence)
+    #     cost.append(pos)
+    #     pos = pos + step
+
     utils.process_end("")
     return [influence, cost]
 

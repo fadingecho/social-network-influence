@@ -15,32 +15,51 @@ def my_generator(random, args):
     return [random.random() for _ in range(num_users)]
 
 
-def get_influence(RRS, seeds):
+def get_cost(seeds):
+    rec_cost = 0
+    for s in seeds:
+        if s > 0.5:
+            rec_cost = rec_cost + 1
+    return rec_cost
+
+
+def get_influence(RRS, seeds, args):
     """
         Inputs: RRS: random RR set
                 seeds: a seed set of nodes, represented by bitmap
                 num_nodes: number of the nodes in the network
         Return: a value represents the estimation of influence of the seeds
     """
+
     count = 0
     for seed_set in RRS:
         for node in seed_set:
             if seeds[node - 1] > 0.5:
+                if args is not None:
+                    si = args.get('special_individual')
+                    si[node - 1] = si[node - 1] + 1
                 count = count + 1
                 break
     return count / len(RRS) * len(seeds)
+    # bitmap_seeds = (1 << len(seeds)) - 1
+    #
+    # count = 0
+    # for seed_set in RRS:
+    #     for node in seed_set:
+    #         if seeds[node - 1] > 0.5 and (bitmap_seeds >> (node - 1)) & 1:
+    #             count = count + 1
+    #             bitmap_seeds = bitmap_seeds & ~(1 << (node - 1))
+    #             break
+    # return count / len(RRS) * len(seeds)
 
 
 def my_evaluator(candidates, args):
     fitness = []
     RRS = args.get('RRS')
     for cs in candidates:
-        rec_cost = 0
-        for c in cs:
-            if c > 0.5:
-                rec_cost = rec_cost + 1
-        influence_spread = get_influence(RRS, cs)
-        # fitness.append([-influence_spread, rec_cost])
+        rec_cost = get_cost(cs)
+        influence_spread = get_influence(RRS, cs, args)
+
         fitness.append(emo.Pareto([-influence_spread, rec_cost]))
     return fitness
 
@@ -64,7 +83,6 @@ def my_observer(population, num_generations, num_evaluations, args):
 
 @crossover
 def my_cross(random, mom, dad, args):
-    # TODO also mutation
     blx_points = args.setdefault('blx_points', None)
     crossover_rate = args.setdefault('crossover_rate', 1.0)
     bounder = args['_ec'].bounder
@@ -118,6 +136,7 @@ def optimize(RRS, _user_num, pop_size=100, max_generation=100, prng=None):
     ea.terminator = inspyred.ec.terminators.generation_termination
     ea.observer = my_observer
 
+    special_individual = [0] * _user_num
     ea.evolve(
         evaluator=my_evaluator,
         generator=my_generator,
@@ -127,7 +146,7 @@ def optimize(RRS, _user_num, pop_size=100, max_generation=100, prng=None):
         max_generations=max_generation,
         num_users=_user_num,
         RRS=RRS,
-        blx_alpha=1.0)
+        special_individual=special_individual)
     print(str(time() - start_time) + 's\n')
 
     _x = []
@@ -136,4 +155,4 @@ def optimize(RRS, _user_num, pop_size=100, max_generation=100, prng=None):
         _x.append(-agent.fitness[0])
         _y.append(agent.fitness[1])
 
-    return [_x, _y]
+    return [_x, _y], special_individual
