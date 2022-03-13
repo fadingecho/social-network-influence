@@ -5,25 +5,22 @@ import numpy as np
 import utils
 
 
-def CELF(IM_dataset, p=0.5, mc=10000):
+def CELF(IM_dataset):
     """
     Inputs: G:  Ex2 dataframe of directed edges. Columns: ['source','target']
             p:  Disease propagation probability
-            mc: Number of Monte-Carlo simulations
     Return: greedy_trace: list[cost] = influence
     """
 
     # --------------------
     # Find the first node with greedy algorithm
     # --------------------
-    print("start celf_mc")
-
     start_time = time()
     # cost is equal
     cost = 1
     # Compute marginal gain for each node
     candidates = np.unique(IM_dataset.G['source'])
-    marg_gain = [IM_dataset.IC([c], p=p, mc=mc) / cost for c in candidates]
+    marg_gain = [IM_dataset.IC([c], p=IM_dataset.p) / cost for c in candidates]
 
     # Create the sorted list of nodes and their marginal gain
     Q = sorted(zip(candidates, marg_gain), key=lambda x: x[1], reverse=True)
@@ -36,7 +33,7 @@ def CELF(IM_dataset, p=0.5, mc=10000):
     # Find the next k-1 nodes using the CELF list-sorting procedure
     # --------------------
 
-    k = len(Q)
+    k = IM_dataset.k
     utils.show_process_bar("CELF", 0, k)
     for _i in range(k):
         utils.show_process_bar("CELF", _i, k)
@@ -47,7 +44,7 @@ def CELF(IM_dataset, p=0.5, mc=10000):
             current = Q[0][0]
 
             # Evaluate the spread function and store the marginal gain in the list
-            Q[0] = (current, IM_dataset.IC(S + [current], p=p, mc=mc) - spread)
+            Q[0] = (current, IM_dataset.IC(S + [current], p=IM_dataset.p) - spread)
 
             # Re-sort the list
             Q = sorted(Q, key=lambda x: x[1], reverse=True)
@@ -103,7 +100,7 @@ def node_selection(IM_dataset):
     return trace
 
 
-def TIM(IM_dataset, p=0.5):
+def TIM(imp):
     """
         Inputs: IM_dataset:  provide estimated RRS, check IMP.py
                 p:  Disease propagation probability
@@ -112,23 +109,25 @@ def TIM(IM_dataset, p=0.5):
     # estimation part is regarded as part of the problem model, check it in the class IMP.py
     influence = []
     cost = []
-    trace = node_selection(IM_dataset)
+    trace = node_selection(imp)
 
     # to save time, I calculate the spread of Monte-Carlo with a fixed step length
     len_trace = len(trace)
     step = int(len_trace / 15)
+    if step == 0:
+        step = 1
     pos = 0
 
     while pos < len_trace:
         utils.show_process_bar("TIM IC", pos + 1, len_trace)
 
-        influence.append(IM_dataset.IC(trace[pos], p=0.5, mc=10000))
+        influence.append(imp.IC(trace[pos], p=imp.p))
         cost.append(len(trace[pos]))
         pos = pos + step
 
     if pos < len_trace - 1:
-        influence.append(IM_dataset.IC(trace[len_trace-1], p=0.5, mc=10000))
-        cost.append(len(trace[len_trace-1]))
+        influence.append(imp.IC(trace[len_trace - 1], p=imp.p))
+        cost.append(len(trace[len_trace - 1]))
     # pos = pos + 1
     # max_influence = influence[len(influence) - 1]
     # while pos <= IM_dataset.k:
@@ -138,4 +137,3 @@ def TIM(IM_dataset, p=0.5):
 
     utils.process_end("")
     return [influence, cost]
-

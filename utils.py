@@ -10,7 +10,7 @@ def show_process_bar(title_str, current_num, total_num):
 
 
 def process_end(content_str=""):
-    print(content_str)
+    print(" " + content_str)
 
 
 def show_result(results, labels, name, result_path):

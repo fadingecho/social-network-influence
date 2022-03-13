@@ -34,7 +34,7 @@ class IMP:
     G = None  # graph stored as edge list
     V = None  # num of nodes
     E = None  # num of directed edge
-    p = 0.3  # propagation probability
+    p = 0.05  # propagation probability
     RRS = None  # random rr sets, size estimated by TIM
 
     weighted = False  # if graph is weighted
@@ -43,7 +43,7 @@ class IMP:
     k = 0  # k-seed users in IMP
     theta = None  # theta in TIM
 
-    def __init__(self, dataset_name, k, weighted, directed):
+    def __init__(self, dataset_name, k, weighted, directed, p=None):
         # read graph info
         self.dataset_name = dataset_name
         self.rrs_path = self.result_path + self.dataset_name + "/RRS-out" + "{:.1}".format(self.p) + ".txt"
@@ -89,10 +89,14 @@ class IMP:
             self.E = self.E * 2
 
         self.theta = self.get_theta(p=self.p)
+        if p is not None:
+            self.p = p
 
     def load_RRS(self):
         # if the existing rrs file is not large enough, extend to a new one
         # else we just shrink the file to fit theta
+
+        print("theta is " + str(self.theta))
         self.RRS = self.read_RRS()
         if len(self.RRS) - self.theta < -100:
             self.RRS.extend(self.generate_RRS(num=self.theta - len(self.RRS), p=self.p))
@@ -103,8 +107,7 @@ class IMP:
     def read_RRS(self):
         RRS = []
         try:
-            RRS_file = open(
-                self.rrs_path)
+            RRS_file = open(self.rrs_path)
         except FileNotFoundError:
             return RRS  # len(RRS) = 0
 
@@ -171,14 +174,13 @@ class IMP:
         utils.process_end("")
         return RRS
 
-    def IC(self, S, p=0.5, mc=10000):
+    def IC(self, S, p=0.5):
         """
         Input:  S:  Set of seed nodes
                 p:  Disease propagation probability
-                mc: Number of Monte-Carlo simulations
         Output: Average number of nodes influenced by the seed nodes
         """
-
+        mc = 100
         # Loop over the Monte-Carlo Simulations
         spread = []
         for _ in range(mc):
