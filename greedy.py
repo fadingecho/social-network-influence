@@ -20,7 +20,7 @@ def CELF(IM_dataset):
     cost = 1
     # Compute marginal gain for each node
     candidates = np.unique(IM_dataset.G['source'])
-    marg_gain = [IM_dataset.IC([c], p=IM_dataset.p) / cost for c in candidates]
+    marg_gain = [IM_dataset.IC([c]) / cost for c in candidates]
 
     # Create the sorted list of nodes and their marginal gain
     Q = sorted(zip(candidates, marg_gain), key=lambda x: x[1], reverse=True)
@@ -44,7 +44,7 @@ def CELF(IM_dataset):
             current = Q[0][0]
 
             # Evaluate the spread function and store the marginal gain in the list
-            Q[0] = (current, IM_dataset.IC(S + [current], p=IM_dataset.p) - spread)
+            Q[0] = (current, IM_dataset.IC(S + [current]) - spread)
 
             # Re-sort the list
             Q = sorted(Q, key=lambda x: x[1], reverse=True)
@@ -121,12 +121,12 @@ def TIM(imp):
     while pos < len_trace:
         utils.show_process_bar("TIM IC", pos + 1, len_trace)
 
-        influence.append(imp.IC(trace[pos], p=imp.p))
+        influence.append(imp.IC(trace[pos]))
         cost.append(len(trace[pos]))
         pos = pos + step
-
+    utils.show_process_bar("TIM IC", len_trace, len_trace)
     if pos < len_trace - 1:
-        influence.append(imp.IC(trace[len_trace - 1], p=imp.p))
+        influence.append(imp.IC(trace[len_trace - 1]))
         cost.append(len(trace[len_trace - 1]))
     # pos = pos + 1
     # max_influence = influence[len(influence) - 1]

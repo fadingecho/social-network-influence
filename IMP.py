@@ -1,4 +1,5 @@
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -6,7 +7,7 @@ import pandas as pd
 import utils
 
 para_l = 1
-para_epsilon = 0.3
+para_epsilon = 0.5
 
 
 def width_of_RR_set(R, in_degrees):
@@ -34,8 +35,8 @@ class IMP:
     G = None  # graph stored as edge list
     V = None  # num of nodes
     E = None  # num of directed edge
-    p = 0.05  # propagation probability
-    RRS = None  # random rr sets, size estimated by TIM
+    p = 0.2   # propagation probability
+    RRS = []  # random rr sets, size estimated by TIM
 
     weighted = False  # if graph is weighted
     directed = False  # if graph is directed
@@ -88,16 +89,17 @@ class IMP:
 
             self.E = self.E * 2
 
-        self.theta = self.get_theta(p=self.p)
         if p is not None:
             self.p = p
 
     def load_RRS(self):
         # if the existing rrs file is not large enough, extend to a new one
         # else we just shrink the file to fit theta
-
-        print("theta is " + str(self.theta))
         self.RRS = self.read_RRS()
+        # get_theta() needs RRS to estimate KPT, if RRS is exhausted, new rrset will be appended
+        self.theta = self.get_theta(p=self.p)
+        print("theta is " + str(self.theta))
+
         if len(self.RRS) - self.theta < -100:
             self.RRS.extend(self.generate_RRS(num=self.theta - len(self.RRS), p=self.p))
             self.save_RRS()
@@ -115,7 +117,6 @@ class IMP:
             rf = rf.strip('[]\n')
             RRS.append(list(map(int, rf.split(","))))
         print("read RRS from file, size : " + str(len(RRS)))
-        print("theta is : " + str(self.theta))
 
         return RRS
 
@@ -174,10 +175,9 @@ class IMP:
         utils.process_end("")
         return RRS
 
-    def IC(self, S, p=0.5):
+    def IC(self, S):
         """
         Input:  S:  Set of seed nodes
-                p:  Disease propagation probability
         Output: Average number of nodes influenced by the seed nodes
         """
         mc = 100
@@ -194,7 +194,7 @@ class IMP:
                 # Extract the out-neighbors of those nodes
                 targets = temp['target'].tolist()
 
-                success = np.random.uniform(0, 1, len(targets)) < p
+                success = np.random.uniform(0, 1, len(targets)) < self.p
 
                 # Determine those neighbors that become infected
                 new_ones = np.extract(success, targets)
@@ -215,22 +215,40 @@ class IMP:
         :param p: propagation probability
         :return: KPT star
         """
+        KPT_star = 1
         G = self.G
         n = self.V
         m = self.E
 
         in_degrees = G['target'].value_counts()
+        RRS_it = iter(self.RRS)
+        it_exhausted = False
 
         for i in range(1, int(np.log2(n) - 1)):
             ci = 6 * para_l * np.log(n) + 6 * np.log(np.log2(n)) * np.exp2(i)
             _sum = 0
             for j in range(1, int(ci)):
-                R = self.get_a_random_RRS(p=p)
+                # make use of the rrset in the file
+                if it_exhausted:
+                    R = self.get_a_random_RRS(p=p)
+                    self.RRS.append(R)
+                else:
+                    try:
+                        R = next(RRS_it)
+                    except StopIteration:
+                        it_exhausted = True
+                        R = self.get_a_random_RRS(p=p)
+                        self.RRS.append(R)
+
                 kR = 1 - (1 - width_of_RR_set(R, in_degrees) / m) ** self.k
                 _sum = _sum + kR
+
             if _sum / ci > 1 / np.exp2(i):
-                return n * _sum / (2 * ci)
-        return 1
+                KPT_star = n * _sum / (2 * ci)
+                break
+
+        self.save_RRS()
+        return KPT_star
 
     def get_theta(self, p=0.5):
         """
@@ -239,8 +257,24 @@ class IMP:
         :return: theta in TIM
         """
         kpt = self.KPT_estimation(p=p)
-        _lambda = (8 + 2 * para_epsilon) * self.V * (
-                para_l * np.log(self.V) + np.log(float(np.math.comb(self.V, self.k))) + np.log(2)) * para_epsilon ** (
-                      -2)
+
+        # because of combination number explosion, treat the comb item specially
+        comb_Vk = np.math.comb(self.V, self.k)
+        try:
+            log_comb_Vk = np.log(float(comb_Vk))
+        except OverflowError:
+            log_comb_Vk = 1.0
+            big_float = 1e100
+            tmp = comb_Vk
+            log_big_float = np.log(big_float)
+            while tmp > int(big_float):
+                log_comb_Vk = log_comb_Vk * log_big_float
+                tmp = tmp - int(big_float)
+                print(str(log_comb_Vk))
+            log_comb_Vk = log_comb_Vk * np.log(tmp)
+
+        _lambda = (8 + 2 * para_epsilon) * self.V * \
+                  (para_l * np.log(self.V) + log_comb_Vk + np.log(2)) * \
+                  para_epsilon ** (-2)
         theta = int(_lambda / kpt)
         return theta

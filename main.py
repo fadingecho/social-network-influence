@@ -3,6 +3,7 @@ import numpy
 import pandas as pd
 from bitmap import bitmap
 
+import baseline_random
 import greedy
 import nsgaii
 import utils
@@ -11,9 +12,9 @@ from IMP import IMP
 
 def test_basic():
     config_file = pd.read_csv(IMP.datasets_path + "config.csv", delimiter=',', index_col=False, skipinitialspace=True)
-    print("read config file")
+    print("config file")
     print(config_file[['name', 'activate']])
-    print("==========")
+    print("")
 
     for idx in config_file.index:
         # check each dataset
@@ -25,9 +26,10 @@ def test_basic():
 
         # create IM problem model
         dataset_name = str(config_file['name'][idx])
+        print('-----------' + dataset_name + '-----------')
 
         imp = IMP(dataset_name,
-                  k=0.9,
+                  k=50,
                   weighted=config_file['weighted'][idx],
                   directed=config_file['directed'][idx]
                   )
@@ -35,14 +37,18 @@ def test_basic():
         # utils.visual_RRS(imp.G)
 
         # run algorithms
-        result_TIM = greedy.TIM(imp)
-        result_EC = nsgaii.optimize(imp, pop_size=50, max_generation=50)
+        # result_random = baseline_random.random_solutions(500, imp)
+        # result_TIM = greedy.TIM(imp)
+        result_EC = nsgaii.optimize(imp, pop_size=100, max_generation=200)
 
         # visualization
-        # utils.show_result([result_EC],
-        #                   ["NSGA-II"], name=dataset_name, result_path=imp.result_path)
-        utils.show_result([result_TIM, result_EC],
-                          ["TIM", "NSGA-II"], name=dataset_name, result_path=imp.result_path)
+        utils.show_result([result_EC],
+                          ["NSGA-II"], name=dataset_name, result_path=imp.result_path)
+        # utils.show_result([result_TIM, result_EC],
+        #                   ["TIM", "NSGA-II"], name=dataset_name, result_path=imp.result_path)
+        # utils.show_result([result_TIM, result_EC, result_random],
+        #                   ["TIM", "NSGA-II", "random"], name=dataset_name, result_path=imp.result_path,
+        #                   display=True)
 
 
 def test_new_gen():
@@ -62,7 +68,7 @@ def test_new_gen():
     # utils.visual_RRS(imp.G)
 
     # run algorithms
-    result_EC = nsgaii.optimize(imp, pop_size=100, max_generation=10)
+    result_EC = nsgaii.optimize(imp, pop_size=50, max_generation=10)
     result_CELF = greedy.CELF(imp)
     result_TIM = greedy.TIM(imp)
 
@@ -70,7 +76,7 @@ def test_new_gen():
     # utils.show_result([result_EC],
     #                   ["NSGA-II"], name=dataset_name, result_path=imp.result_path)
     utils.show_result([result_CELF, result_TIM, result_EC],
-                      ["CELF", "TIM", "NSGA-II"], name=dataset_name, result_path=imp.result_path)
+                      ["CELF", "TIM", "NSGA-II"], name=dataset_name, result_path=imp.result_path, display=True)
 
 
 if __name__ == '__main__':

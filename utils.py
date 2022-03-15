@@ -13,7 +13,7 @@ def process_end(content_str=""):
     print(" " + content_str)
 
 
-def show_result(results, labels, name, result_path):
+def show_result(results, labels, name, result_path, display=False):
     color = ['b', 'r', 'g']
 
     fig, ax = plt.subplots()
@@ -29,16 +29,18 @@ def show_result(results, labels, name, result_path):
     ax.legend()
     ax.grid(True)
     plt.title(name)
-    # plt.show()
 
     # save result, file name identified by a none-sense prefix
     file_name = result_path + name + '/result' + str(datetime.datetime.now().minute) + str(
         datetime.datetime.now().hour) + '.pdf'
     try:
-        pylab.savefig(file_name, format='pdf')
+        plt.savefig(file_name, format='pdf')
     except FileNotFoundError:
         os.makedirs(result_path + name)
-        pylab.savefig(file_name, format='pdf')
+        plt.savefig(file_name, format='pdf')
+
+    if display:
+        plt.show()
 
 
 def visual_RRS(G, RRS=None):

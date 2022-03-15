@@ -1,26 +1,34 @@
 import copy
-import itertools
 import random
 from time import time
 
+import bitmap
 import inspyred
 from inspyred.ec import emo
 from inspyred.ec.generators import diversify
-from inspyred.ec.variators import crossover
+from inspyred.ec.variators import crossover, mutator
+from bitmap import BitMap
 
 import utils
 
 
 @diversify
-def generator_function(random, args):
-    return random.sample(list(range(1, args.get('num_users'))), k=random.randint(1, args.get('k')))
+def imp_generator(random, args):
+    num_users = args.get('num_users')
+    bm = BitMap(num_users + 1)
+    for i in range(1, num_users + 1):
+        bm.reset(i)
+
+    for i in random.sample(range(1, num_users + 1), random.randint(1, num_users)):
+        bm.flip(i)
+    return bm
 
 
-def get_cost(seeds):
-    return len(seeds)
+def imp_cost(seeds):
+    return seeds.count()
 
 
-def get_influence(RRS, seeds, args):
+def imp_influence(RRS, seeds, args):
     """
         Inputs: RRS: random RR set
                 seeds: a seed set of nodes, represented by a node set
@@ -30,37 +38,37 @@ def get_influence(RRS, seeds, args):
 
     count = 0
     # count the frequency of intersection between the seed set and every rr set
-    for r in RRS:
-        for s in seeds:
-            if s in r:
+    for R in RRS:
+        for r in R:
+            if seeds.test(r):
                 count = count + 1
                 break
     return count / len(RRS) * args.get('num_users')
 
 
-def my_evaluator(candidates, args):
+def imp_evaluator(candidates, args):
     fitness = []
     RRS = args.get('RRS')
     for cs in candidates:
-        rec_cost = get_cost(cs)
-        influence_spread = get_influence(RRS, cs, args)
+        rec_cost = imp_cost(cs)
+        influence_spread = imp_influence(RRS, cs, args)
 
         fitness.append(emo.Pareto([-influence_spread, rec_cost]))
     return fitness
 
 
-def my_observer(population, num_generations, num_evaluations, args):
+def imp_observer(population, num_generations, num_evaluations, args):
     max_gen = args.get('max_generations')
-    utils.show_process_bar("gen :", num_generations, max_gen)
+    utils.show_process_bar("nsga-ii evolving :", num_generations, max_gen)
 
 
 # TODO sample from flat RRS
 @crossover
-def my_cross(random, mom, dad, args):
+def imp_cross(random, mom, dad, args):
     alpha = 0.3
     alpha_p = 0.5
-    beta = 0.3
-    beta_p = 0.5
+    values = args.get('values')
+    num_users = args.get('num_users')
 
     crossover_rate = args.setdefault('crossover_rate', 1.0)
     children = []
@@ -69,28 +77,23 @@ def my_cross(random, mom, dad, args):
         sis = copy.copy(mom)
 
         # add node
-        dad_attitude = random.sample(dad, int(alpha * len(dad)))
+        dad_attitude = random.sample(values, int(alpha * num_users))
         for d in dad_attitude:
-            if d not in mom:
+            if dad.test(d) and not mom.test(d):
                 if random.random() > alpha_p:
-                    sis.append(d)
-        mom_attitude = random.sample(mom, int(alpha * len(mom)))
+                    sis.set(d)
+            elif not dad.test(d) and mom.test(d):
+                if random.random() > alpha_p:
+                    sis.reset(d)
+        mom_attitude = random.sample(values, int(alpha * num_users))
         for m in mom_attitude:
-            if m not in dad:
+            if mom.test(m) and not dad.test(m):
                 if random.random() > alpha_p:
-                    bro.append(m)
+                    bro.set(m)
+            elif not mom.test(m) and dad.test(m):
+                if random.random() > alpha_p:
+                    bro.reset(m)
 
-        # remove node
-        dad_attitude = random.sample(mom, int(beta * len(mom)))
-        for d in dad_attitude:
-            if d not in dad:
-                if random.random() > beta_p:
-                    sis.remove(d)
-        mom_attitude = random.sample(dad, int(beta * len(dad)))
-        for m in mom_attitude:
-            if m not in mom:
-                if random.random() > beta_p:
-                    bro.remove(m)
         children.append(bro)
         children.append(sis)
     else:
@@ -99,9 +102,19 @@ def my_cross(random, mom, dad, args):
     return children
 
 
-def optimize(imp, pop_size=100, max_generation=100, prng=None):
+@mutator
+def imp_mutate(random, candidate, args):
+    num_users = args.get('num_users')
+    for i in range(1, num_users + 1):
+        if random.random() < 0.1:
+            candidate.flip(i)
+    return candidate
+
+
+def optimize(imp, pop_size=100, max_generation=100, ls=False, prng=None):
     """
     my modified nsga-ii
+    :param ls: local search option
     :param imp: a class IMP instance
     :param pop_size:
     :param max_generation:
@@ -119,32 +132,42 @@ def optimize(imp, pop_size=100, max_generation=100, prng=None):
     ea = inspyred.ec.emo.NSGA2(prng)
 
     ea.variator = [
-        my_cross,
-        inspyred.ec.variators.random_reset_mutation
+        imp_cross,
+        imp_mutate
     ]
     ea.terminator = inspyred.ec.terminators.generation_termination
-    ea.observer = my_observer
+    ea.observer = imp_observer
     ea.bounder = inspyred.ec.DiscreteBounder(list(range(1, imp.V + 1)))
 
     ea.evolve(
-        evaluator=my_evaluator,
-        generator=generator_function,
+        evaluator=imp_evaluator,
+        generator=imp_generator,
         pop_size=pop_size,
         maximize=False,
         max_generations=max_generation,
         num_users=imp.V,
         RRS=imp.RRS,
-        k=imp.k
+        k=imp.k,
+        values=range(1, imp.V + 1)
     )
-    utils.process_end(str(time() - start_time) + 's\n')
+    utils.process_end(str(time() - start_time) + 's')
 
-    _x = []
-    _y = []
-    for agent in ea.archive:
-        _x.append(imp.IC(agent.candidate, p=imp.p))
-        _y.append(agent.fitness[1])
-
-    return [_x, _y]
+    # evaluate archive
+    influence = []
+    cost = []
+    utils.show_process_bar("nsga-ii IC ", 0, len(ea.archive))
+    for _i in range(len(ea.archive)):
+        utils.show_process_bar("nsga-ii IC ", _i, len(ea.archive))
+        # construct solution
+        solution = []
+        candidate = ea.archive[_i].candidate
+        for i in range(1, candidate.size()):
+            if candidate.test(i):
+                solution.append(i)
+        influence.append(imp.IC(solution))
+        cost.append(ea.archive[_i].fitness[1])
+    utils.process_end("")
+    return [influence, cost]
 
 
 # test
