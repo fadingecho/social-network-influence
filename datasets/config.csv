@@ -1,7 +1,7 @@
 name,directed,weighted,activate
 soc-dolphins,false,false,false
-soc-wiki-Vote,true,false,false
+soc-wiki-Vote,true,false,true
 socfb-Caltech36,false,false,false
 socfb-Reed98,false,false,false
-socfb-American75,false,false,true
+socfb-American75,false,false,false
 soc-twitter-follows,true,false,false

@@ -1,10 +1,7 @@
 import os
-import sys
-
+import _utils
 import numpy as np
 import pandas as pd
-
-import utils
 
 para_l = 1
 para_epsilon = 0.5
@@ -32,11 +29,12 @@ class IMP:
     dataset_name = None
     rrs_path = None
 
-    G = None  # graph stored as edge list
-    V = None  # num of nodes
-    E = None  # num of directed edge
-    p = 0.2   # propagation probability
-    RRS = []  # random rr sets, size estimated by TIM
+    G = None   # graph stored as edge list
+    V = None   # num of nodes
+    E = None   # num of directed edge
+    p = 0.2    # propagation probability
+    mc = 1000  # monte carlo repetition
+    RRS = []   # random rr sets, size estimated by TIM
 
     weighted = False  # if graph is weighted
     directed = False  # if graph is directed
@@ -44,7 +42,7 @@ class IMP:
     k = 0  # k-seed users in IMP
     theta = None  # theta in TIM
 
-    def __init__(self, dataset_name, k, weighted, directed, p=None):
+    def __init__(self, dataset_name, k, weighted, directed, p=0.2, mc=1000):
         # read graph info
         self.dataset_name = dataset_name
         self.rrs_path = self.result_path + self.dataset_name + "/RRS-out" + "{:.1}".format(self.p) + ".txt"
@@ -58,8 +56,6 @@ class IMP:
         )
         self.V = G_info.iat[0, 0]
         self.E = G_info.iat[0, 2]
-
-        # read edges
         self.G = pd.read_csv(
             self.datasets_path + dataset_name + '.mtx',
             delimiter=" ",
@@ -68,6 +64,19 @@ class IMP:
             dtype='Int32',
             skiprows=2
         )
+        self.mc = mc
+        self.p = p
+        self.weighted = weighted
+        self.directed = directed
+
+        # convert undirected graph to directed
+        if not directed:
+            print("this network is undirected")
+            G_copy = self.G.copy(deep=True)
+            G_copy[['target', 'source']] = G_copy[['source', 'target']]
+            G_copy.columns = ['source', 'target']
+            self.G = pd.concat([self.G, G_copy], ignore_index=True)
+            self.E = self.E * 2
 
         if k == 0:
             self.k = self.V
@@ -75,19 +84,6 @@ class IMP:
             self.k = int(self.V * k)
         else:
             self.k = k
-
-        self.weighted = weighted
-        self.directed = directed
-
-        # convert undirected graph to directed
-        if directed:
-            print("this network is undirected")
-            G_copy = self.G.copy(deep=True)
-            G_copy[['target', 'source']] = G_copy[['source', 'target']]
-            G_copy.columns = ['source', 'target']
-            self.G = pd.concat([self.G, G_copy], ignore_index=True)
-
-            self.E = self.E * 2
 
         if p is not None:
             self.p = p
@@ -167,12 +163,12 @@ class IMP:
             num = self.theta
         RRS = []
 
-        utils.show_process_bar("reverse sampling :", 0, num)
+        _utils.show_process_bar("reverse sampling :", 0, num)
         for _i in range(0, num):
             r = self.get_a_random_RRS(p=p)
             RRS.append(r)
-            utils.show_process_bar("reverse sampling :", _i, num)
-        utils.process_end("")
+            _utils.show_process_bar("reverse sampling :", _i, num)
+        _utils.process_end("")
         return RRS
 
     def IC(self, S):
@@ -180,10 +176,9 @@ class IMP:
         Input:  S:  Set of seed nodes
         Output: Average number of nodes influenced by the seed nodes
         """
-        mc = 100
         # Loop over the Monte-Carlo Simulations
         spread = []
-        for _ in range(mc):
+        for _ in range(self.mc):
 
             # Simulate propagation process
             new_active, A = S[:], S[:]
@@ -263,6 +258,7 @@ class IMP:
         try:
             log_comb_Vk = np.log(float(comb_Vk))
         except OverflowError:
+            print("overflow")
             log_comb_Vk = 1.0
             big_float = 1e100
             tmp = comb_Vk

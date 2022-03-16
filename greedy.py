@@ -2,7 +2,7 @@ import copy
 from collections import Counter
 from time import time
 import numpy as np
-import utils
+import _utils
 
 
 def CELF(IM_dataset):
@@ -34,9 +34,9 @@ def CELF(IM_dataset):
     # --------------------
 
     k = IM_dataset.k
-    utils.show_process_bar("CELF", 0, k)
+    _utils.show_process_bar("CELF", 0, k)
     for _i in range(k):
-        utils.show_process_bar("CELF", _i, k)
+        _utils.show_process_bar("CELF", _i, k)
         found = False
 
         while not found:
@@ -59,14 +59,14 @@ def CELF(IM_dataset):
 
         # Remove the selected node from the list
         Q = Q[1:]
-    utils.process_end(str(time() - start_time) + 's')
+    _utils.process_end(str(time() - start_time) + 's')
 
     return [greedy_trace, [_i + 1 for _i in range(len(greedy_trace))]]
 
 
 def node_selection(IM_dataset):
     """
-        Inputs: IM_dataset:  provide estimated RRS, check IMP.py
+        Inputs: IM_dataset:  provide estimated RRS, check IM_problem.py
         Return: greedy_trace: list[cost] = influence
     """
 
@@ -102,38 +102,37 @@ def node_selection(IM_dataset):
 
 def TIM(imp):
     """
-        Inputs: IM_dataset:  provide estimated RRS, check IMP.py
+        Inputs: IM_dataset:  provide estimated RRS, check IM_problem.py
                 p:  Disease propagation probability
-        Return: [influence, cost], cost increases from 1 and ends close to the max(cost)
+        Return: greedy trace
     """
-    # estimation part is regarded as part of the problem model, check it in the class IMP.py
-    influence = []
-    cost = []
+    # estimation part is regarded as part of the problem model, check it in the class IM_problem.py
     trace = node_selection(imp)
 
+    return trace
+
+
+def IC_evaluate(trace, imp):
+    influence = []
+    cost = []
     # to save time, I calculate the spread of Monte-Carlo with a fixed step length
     len_trace = len(trace)
-    step = int(len_trace / 15)
+    # step = int(len_trace / 15)
+    step = 1
     if step == 0:
         step = 1
     pos = 0
 
     while pos < len_trace:
-        utils.show_process_bar("TIM IC", pos + 1, len_trace)
+        _utils.show_process_bar("IC evaluating", pos + 1, len_trace)
 
         influence.append(imp.IC(trace[pos]))
         cost.append(len(trace[pos]))
         pos = pos + step
-    utils.show_process_bar("TIM IC", len_trace, len_trace)
+    _utils.show_process_bar("IC evaluating", len_trace, len_trace)
     if pos < len_trace - 1:
         influence.append(imp.IC(trace[len_trace - 1]))
         cost.append(len(trace[len_trace - 1]))
-    # pos = pos + 1
-    # max_influence = influence[len(influence) - 1]
-    # while pos <= IM_dataset.k:
-    #     influence.append(max_influence)
-    #     cost.append(pos)
-    #     pos = pos + step
+    _utils.process_end("")
 
-    utils.process_end("")
     return [influence, cost]
