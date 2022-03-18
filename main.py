@@ -1,3 +1,5 @@
+import random
+
 import baseline_random
 import greedy
 import nsgaii
@@ -141,7 +143,7 @@ def test_vs_random():
     # check each dataset
     # create IM problem model
     dataset_name = 'soc-wiki-Vote'
-    _k = 100
+    _k = 50
     pop_size = 50
     max_generation = 50
 
@@ -155,14 +157,20 @@ def test_vs_random():
 
     # run algorithms
     trace = greedy.TIM(imp)
-    # seeds = [_utils.encode_set_to_bitmap(t, imp.V) for t in trace]
+    seeds = []
+    for _ in range(pop_size):
+        seed = nsgaii.imp_generator(random, {'num_users': imp.V})
+        for t in trace[5]:
+            seed.set(t)
+        seeds.append(seed)
+
     # result_TIM = greedy.IC_evaluate(trace, imp)
 
-    moea_archive = nsgaii.optimize(imp, pop_size=pop_size, max_generations=max_generation)
-    result_EC = nsgaii.IC_evaluate_archive(moea_archive, imp)
+    # moea_archive = nsgaii.optimize(imp, pop_size=pop_size, max_generations=max_generation)
+    # result_EC = nsgaii.IC_evaluate_archive(moea_archive, imp)
 
-    # moea_archive_TIM = nsgaii.optimize(imp, pop_size=imp.k, max_generations=max_generation, initial_pop=trace)
-    # result_EC_TIM = nsgaii.IC_evaluate_archive(moea_archive_TIM, imp)
+    moea_archive_TIM = nsgaii.optimize(imp, pop_size=pop_size, max_generations=max_generation, initial_pop=seeds)
+    result_EC_TIM = nsgaii.IC_evaluate_archive(moea_archive_TIM, imp)
 
     result_random = baseline_random.random_solutions(100, imp)
 
@@ -170,10 +178,10 @@ def test_vs_random():
     title = dataset_name + " gen : " + str(max_generation) + " p : " + str(imp.p)
     _utils.show_result(
         {
-            "NSGA-II": [result_EC, 'r'],
+            # "NSGA-II": [result_EC, 'r'],
             "random": [result_random, 'g'],
             # "TIM": [result_TIM, 'b'],
-            # "NSGA_II_TIM": [result_EC_TIM, 'k']
+            "NSGA_II_TIM": [result_EC_TIM, 'k']
         },
         dataset_name, imp.result_path, title,
         display=True)
@@ -183,13 +191,13 @@ def test_TIM_initial():
     dataset_name = 'soc-wiki-Vote'
     _k = 100
     pop_size = 50
-    max_generation = 10
+    max_generation = 100
 
     imp = IMP(dataset_name,
               k=_k,
               weighted=False,
               directed=True,
-              mc=100
+              mc=200
               )
     imp.load_RRS()
 
