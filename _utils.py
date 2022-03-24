@@ -1,9 +1,6 @@
 import os
 import datetime
-
 from bitmap import BitMap
-
-import _utils
 import networkx as nx
 from matplotlib import pyplot as plt
 
@@ -18,11 +15,11 @@ def process_end(content_str=""):
     print(" " + content_str)
 
 
-def show_result(result_dict, dataset_name, result_path, title, display=False):
+def show_result(result_dict, dataset_name, result_path, title, display=False, xlabel='Influence spread', ylabel='Recruitment costs'):
 
     fig, ax = plt.subplots()
-    ax.set_xlabel('Influence spread')
-    ax.set_ylabel('Recruitment costs')
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
     for key, value in result_dict.items():
         # label : [[[Xs], [Ys]], 'color']
         ax.scatter(value[0][0],
@@ -48,24 +45,6 @@ def show_result(result_dict, dataset_name, result_path, title, display=False):
         plt.show()
 
 
-def evaluate_seed(imp, seeds):
-    influence = []
-    cost = []
-    _utils.show_process_bar("evaluating ", 0, len(seeds))
-    for _i in range(len(seeds)):
-        _utils.show_process_bar("nsga-ii IC ", _i, len(seeds))
-        # construct solution
-        solution = []
-        candidate = seeds[_i]
-        for i in range(1, candidate.size()):
-            if candidate.test(i):
-                solution.append(i)
-        influence.append(imp.IC(solution))
-        cost.append(len(seeds[_i]))
-    _utils.process_end("")
-    return [influence, cost]
-
-
 def encode_set_to_bitmap(S, length):
     bm = BitMap(length + 1)
 
@@ -77,6 +56,19 @@ def encode_set_to_bitmap(S, length):
             bm.reset(i)
 
     return bm
+
+
+def set_ec_logger():
+    # Use and Consult the Logs
+    # Check : https://pythonhosted.org/inspyred/troubleshooting.html#use-and-consult-the-logs
+    import logging
+    logger = logging.getLogger('inspyred.ec')
+    logger.setLevel(logging.DEBUG)
+    file_handler = logging.FileHandler('inspyred.log', mode='w')
+    file_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
 
 def visual_RRS(G, RRS=None):
