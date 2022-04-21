@@ -1,7 +1,8 @@
 import os
 import datetime
+import random
+
 from bitmap import BitMap
-import networkx as nx
 from matplotlib import pyplot as plt
 
 color_plt = ['b', 'r', 'g', 'y', 'c', 'm']
@@ -15,8 +16,8 @@ def process_end(content_str=""):
     print(" " + content_str)
 
 
-def show_result(result_dict, dataset_name, result_path, title, display=False, xlabel='Influence spread', ylabel='Recruitment costs'):
-
+def show_result(result_dict, dataset_name, result_path, title, display=False, xlabel='Influence spread',
+                ylabel='Recruitment costs'):
     fig, ax = plt.subplots()
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -71,18 +72,154 @@ def set_ec_logger():
     logger.addHandler(file_handler)
 
 
-def visual_RRS(G, RRS=None):
-    # visualize RRS generetated from G
-    #
-    d_g = nx.DiGraph()
+def encode_node_ID(filename):
+    # create a new file named filename + "-encoded"
+    f = '.txt'
+    sep = "\t"
 
-    # step 1 : create directed graph in networkx
-    d_g.add_edges_from(G.values.tolist())
+    data_file = open(filename + f, 'r')
+    id_cnt = 0
 
-    pos = nx.spring_layout(d_g, k=0.5, seed=7355608)
-    nx.draw_networkx_nodes(d_g, pos, node_size=100)
-    nx.draw_networkx_edges(d_g, pos, alpha=0.4)
+    node_dic = dict()
+    lines = data_file.readlines()
+    new_lines = []
+    V_E_line = lines[2].split(" ")
+    V, E = V_E_line[2], V_E_line[4]
+    new_lines.append("{0}\t{1}".format(V, E))
 
-    # step 2 : show the results of RRS,
-    # nx.draw(d_g, with_labels=True, edge_color='b', node_color='g', node_size=300, font_color='w', font_size=10)
+    for i in range(5, len(lines)):
+        n1, n2 = lines[i].strip().split(sep=sep)
+
+        if n1 in node_dic:
+            id1 = node_dic[n1]
+        else:
+            id_cnt += 1
+            id1 = id_cnt
+            node_dic[n1] = id1
+
+        if n2 in node_dic:
+            id2 = node_dic[n2]
+        else:
+            id_cnt += 1
+            id2 = id_cnt
+            node_dic[n2] = id2
+
+        new_lines.append("{0}\t{1}\n".format(id1, id2))
+
+    new_file = open(filename + "-encoded" + f, 'w+')
+    new_file.writelines(new_lines)
+
+    new_file.close()
+    data_file.close()
+
+
+# draw fig1 for my paper
+def fig2():
+    """
+    raw G       |   sampled G'
+    --------------------------
+    g(G',v1)    |   g(G',v2)
+    """
+    import matplotlib.pyplot as plt
+    import networkx as nx
+
+    G00 = nx.DiGraph()
+    G00.add_edges_from([
+        (1, 2), (1, 3), (1, 4), (1, 6),
+        (2, 3),
+        (3, 5), (3, 6),
+        (4, 6),
+    ])
+    # pos = nx.spectral_layout(G00)
+    pos = {
+        1: (0, 0), 2: (0.5, 0),
+        3: (0, 3), 4: (0.5, 3),
+        5: (0, 6), 6: (0.5, 6),
+           }
+
+    G10 = nx.DiGraph()
+    G10.add_edges_from([(1, 3), (2, 3), (3, 5), (3, 6), (4, 6)])
+
+    G01 = nx.DiGraph()
+    G01.add_edges_from([(1, 3), (2, 3), (3, 5), (3, 6), (4, 6)])
+
+    G11 = nx.DiGraph()
+    G11.add_edges_from([(1, 3), (2, 3), (3, 5), (3, 6), (4, 6)])
+
+    # Create a 2x2 subplot
+    fig, all_axes = plt.subplots(2, 2)
+    ax = all_axes.flat
+
+    options = {
+        "with_labels": True,
+        "font_size": 13,
+        "node_size": 500,
+        "node_color": "silver",
+        "edgecolors": "black",
+        "linewidths": 1,
+        "width": 1,
+    }
+
+    chosen_node_options = {
+        "node_size": 500,
+        "node_color": "tomato",
+        "linewidths": 1,
+    }
+
+    other_node_options = {
+        "node_size": 500,
+        "node_color": "grey",
+        "linewidths": 1,
+    }
+
+    nx.draw(G00, pos, ax=ax[0], **options)
+    nx.draw(G10, pos, ax=ax[1], **options)
+    nx.draw(G01, pos, ax=ax[2], **options)
+    nx.draw_networkx_nodes(G01, pos, nodelist=[3], ax=ax[2], **chosen_node_options)
+    nx.draw_networkx_nodes(G01, pos, nodelist=[1, 2], ax=ax[2], **other_node_options)
+    nx.draw(G11, pos, ax=ax[3], **options)
+    nx.draw_networkx_nodes(G11, pos, nodelist=[5], ax=ax[3], **chosen_node_options)
+    nx.draw_networkx_nodes(G01, pos, nodelist=[1, 2, 3], ax=ax[3], **other_node_options)
+
+    # xlabels
+    titles = ["G", "g", "R(g, 3)={1, 2, 3}", "R(g, 5)={1, 2, 3, 5}"]
+    # Set margins for the axes so that nodes aren't clipped
+    for i in range(len(ax)):
+        ax[i].margins(0.3)
+        ax[i].set_title(titles[i])
+    # ax[0].set_facecolor('lightgoldenrodyellow')
+
+    fig.tight_layout()
+
     plt.show()
+
+
+if __name__ == "__main__":
+    # encode_node_ID("./datasets/soc-LiveJournal1")
+    fig2()
+
+    # from operator import itemgetter
+    #
+    # import matplotlib.pyplot as plt
+    # import networkx as nx
+    #
+    # # Create a BA model graph - use seed for reproducibility
+    # n = 1000
+    # m = 2
+    # seed = 20532
+    # G = nx.barabasi_albert_graph(n, m, seed=seed)
+    #
+    # # find node with largest degree
+    # node_and_degree = G.degree()
+    # (largest_hub, degree) = sorted(node_and_degree, key=itemgetter(1))[-1]
+    #
+    # # Create ego graph of main hub
+    # hub_ego = nx.ego_graph(G, largest_hub)
+    #
+    # # Draw graph
+    # pos = nx.spring_layout(hub_ego, seed=seed)  # Seed layout for reproducibility
+    # nx.draw(hub_ego, pos, node_color="b", node_size=50, with_labels=False)
+    #
+    # options = {"node_size": 300, "node_color": "r"}
+    # nx.draw_networkx_nodes(hub_ego, pos, nodelist=[largest_hub], **options)
+    # plt.show()

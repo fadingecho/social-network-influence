@@ -8,9 +8,8 @@ import numpy as np
 import _utils
 import random
 
-import solution_evaluation
 from spreading_models import IC
-from decimal import Decimal
+
 
 # random
 
@@ -26,7 +25,7 @@ def random_solution(imp):
 # CELF
 
 
-def CELF(IM_dataset):
+def CELF(imp):
     """
     Inputs: G:  Ex2 dataframe of directed edges. Columns: ['source','target']
             p:  Disease propagation probability
@@ -37,11 +36,10 @@ def CELF(IM_dataset):
     # Find the first node with greedy algorithm
     # --------------------
     start_time = time()
-    # cost is equal
-    cost = 1
+
     # Compute marginal gain for each node
-    candidates = np.unique(IM_dataset.G['source'])
-    marg_gain = [IC(IM_dataset, [c]) / cost for c in candidates]
+    candidates = np.unique(imp.G['source'])
+    marg_gain = [IC(imp, [c]) for c in candidates]
 
     # Create the sorted list of nodes and their marginal gain
     Q = sorted(zip(candidates, marg_gain), key=lambda x: x[1], reverse=True)
@@ -54,10 +52,10 @@ def CELF(IM_dataset):
     # Find the next k-1 nodes using the CELF list-sorting procedure
     # --------------------
 
-    k = IM_dataset.k
-    _utils.show_process_bar("CELF", 0, k)
-    for _i in range(k):
-        _utils.show_process_bar("CELF", _i, k)
+    k = min(imp.k , len(candidates))
+    _utils.show_process_bar("CELF", 1, k)
+    for i in range(1, k):
+        _utils.show_process_bar("CELF", i + 1, k)
         found = False
 
         while not found:
@@ -65,7 +63,7 @@ def CELF(IM_dataset):
             current = Q[0][0]
 
             # Evaluate the spread function and store the marginal gain in the list
-            Q[0] = (current, IC(IM_dataset, S + [current]) - spread)
+            Q[0] = (current, IC(imp, S + [current]) - spread)
 
             # Re-sort the list
             Q = sorted(Q, key=lambda x: x[1], reverse=True)
@@ -87,23 +85,27 @@ def CELF(IM_dataset):
 
 # TIM
 TIM_para_l = 1
-TIM_para_epsilon = 0.5
+TIM_para_epsilon = 0.1
 
 
-def TIM_node_selection(imp):
+def TIM_node_selection(imp, theta):
     """
         Inputs: IM_dataset:  provide estimated RRS, check IM_problem.py
         Return: greedy_trace: list[cost] = influence
     """
 
     # Generate theta random RR sets and insert them into set_R
-    set_R = imp.RRS
+    set_R = [imp.get_a_unused_rrset() for _ in range(theta)]
+    set_R_bk = set_R.copy()
 
     # S_k is the final solution
     S_k = []
     trace = []
 
-    for j in range(1, imp.k + 1):
+    _utils.show_process_bar("theta={0} TIM : ".format(theta), 0, imp.k)
+    for i in range(1, imp.k + 1):
+        _utils.show_process_bar("theta={0} TIM : ".format(theta), i, imp.k)
+
         # identify the node that covers the most RR sets in set_R
         flat_list = [item for sublist in set_R for item in sublist]
         most_common = Counter(flat_list).most_common()
@@ -123,7 +125,8 @@ def TIM_node_selection(imp):
         # record trace
         trace.append(copy.deepcopy(S_k))
 
-    return trace
+    _utils.process_end(" ")
+    return trace, set_R_bk
 
 
 def TIM_KPT_estimation(imp):
@@ -143,7 +146,7 @@ def TIM_KPT_estimation(imp):
         ci = 6 * TIM_para_l * np.log(n) + 6 * np.log(np.log2(n)) * np.exp2(i)
         _sum = 0
         for j in range(1, int(ci)):
-            R = imp.get_a_random_RRS(p=p)
+            R = imp.get_a_unused_rrset()
 
             # width of a rr set
             width = 0
@@ -186,8 +189,7 @@ def TIM_get_theta(imp):
             print(str(log_comb_Vk))
         log_comb_Vk = log_comb_Vk * np.log(tmp)
 
-    _lambda = (8 + 2 * TIM_para_epsilon) * imp.V * \
-              (TIM_para_l * np.log(imp.V) + log_comb_Vk + np.log(2)) * TIM_para_epsilon ** (-2)
+    _lambda = (8 + 2 * TIM_para_epsilon) * imp.V * (TIM_para_l * np.log(imp.V) + log_comb_Vk + np.log(2)) * TIM_para_epsilon ** (-2)
     theta = int(_lambda / kpt)
     return theta
 
@@ -195,14 +197,36 @@ def TIM_get_theta(imp):
 def TIM(imp):
     """
         Inputs: IM_dataset:  provide estimated RRS, check IM_problem.py
-                p:  Disease propagation probability
-        Return: greedy trace
+        Return: greedy trace, a set of random rr set
     """
 
-    trace = TIM_node_selection(imp)
+    theta = TIM_get_theta(imp)
+    trace, RRS = TIM_node_selection(imp, theta)
 
-    return trace
+    return trace, RRS
 
+
+def TIM_points(imp,  cnt):
+    largest_RRS = []
+    points = []
+
+    step = int(imp.k / cnt)
+    if step == 0:
+        step = 1
+    k = imp.k
+    k0 = k
+
+    while k > 0:
+        imp.set_k(k)
+        trace, RRS = TIM(imp)
+        if len(RRS) > len(largest_RRS):
+            largest_RRS = RRS
+
+        points.append(trace[len(trace) - 1])
+        k = k - step
+
+    imp.set_k(k0)
+    return points, largest_RRS
 
 # IMM
 IMM_para_epsilon = 0.5
@@ -211,50 +235,68 @@ IMM_para_l = 1
 
 def covered_fraction(RRS, solution):
     count = 0
+    solution_set = set(solution)
+
     # count the frequency of intersection between the seed set and every rr set
     for R in RRS:
-        try:
-            if len(set(R) & set(solution)) != 0:
-                count = count + 1
-        except TypeError:
-            print("")
+        for r in R:
+            if r in solution_set:
+                count += 1
+                break
+
     return count / len(RRS)
 
 
 def IMM_node_selection(RRS, k, n):
-    nodes = list(range(1, n + 1))
+    # nodes = set(range(1, n + 1))
+    #
+    # S_k = []
+    # fraction_Sk = covered_fraction(RRS, S_k)
+    #
+    # for _ in range(k):
+    #     marginal_benefit = -1
+    #     v = 0  # #0 is an invalid node
+    #
+    #     # identify the vertex v that maximizes FR(S_k ^ v) - FR(S_k)
+    #     for node in nodes:
+    #         appended = S_k.copy()
+    #         appended.append(node)
+    #         tmp = covered_fraction(RRS, appended) - fraction_Sk
+    #         if tmp > marginal_benefit:
+    #             v = node
+    #             marginal_benefit = tmp
+    #     fraction_Sk = fraction_Sk + marginal_benefit
+    #
+    #     # insert v into S_k
+    #     S_k.append(v)
+    #     nodes.remove(v)
 
-    S_k = []
-    trace = []
+    candidates = list(range(1, n + 1))
+    marg_gain = [covered_fraction(RRS, [c]) for c in candidates]
 
-    for _ in range(k):
-        v = nodes[len(nodes) - 1]
-        fraction_Sk = covered_fraction(RRS, S_k)
-        marginal_benefit = covered_fraction(RRS, [v]) - fraction_Sk
+    Q = sorted(zip(candidates, marg_gain), key=lambda x: x[1], reverse=True)
 
-        # identify the vertex v that maximizes FR(S_k ^ v) - FR(S_k)
-        for node in nodes:
-            appended = S_k.copy()
-            appended.append(node)
-            tmp = covered_fraction(RRS, appended) - fraction_Sk
-            if tmp > marginal_benefit:
-                v = node
-                marginal_benefit = tmp
-        fraction_Sk = fraction_Sk + marginal_benefit
+    S_k, coverage, Q = [Q[0][0]], Q[0][1], Q[1:]
 
-        # insert v into S_k
-        S_k.append(v)
-        trace.append(S_k.copy())
-        nodes.remove(v)
+    for _ in range(1, k):
+        found = False
 
-    return S_k, trace
+        while not found:
+            current = Q[0][0]
+            Q[0] = (current, covered_fraction(RRS, S_k + [current]) - coverage)
+
+            Q = sorted(Q, key=lambda x: x[1], reverse=True)
+
+            found = Q[0][0] == current
+
+        S_k.append(Q[0][0])
+        coverage += Q[0][1]
+        Q = Q[1:]
+
+    return S_k
 
 
 def IMM_sampling(imp):
-    import logging
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
-
     # initialize a set R = None and a integer LB = 1
     RRS = []
     LB = 1
@@ -270,40 +312,81 @@ def IMM_sampling(imp):
     _lambda_prime = (2 + 2 / 3 * _epsilon_prime) * (log_comb_n_k + IMM_para_l * np.log(_n) + np.log(np.log2(_n))) * _n / (_epsilon_prime ** 2)
 
     for i in range(1, int(np.log2(_n))):
+        print(i)
+
         x = _n / np.power(2, i)
         theta_i = _lambda_prime / x
 
-        logger.debug("theta_i is {0}".format(theta_i))
+        print("theta_i is {0}".format(theta_i))
         while len(RRS) <= theta_i:
             # select a node v from G uniformly at random
             # generate an RR set for v, and insert it into R
-            RRS.append(imp.get_a_random_RRS(p=imp.p))
+            RRS.append(imp.get_a_unused_rrset())
 
-        Si, _ = IMM_node_selection(RRS, _k, _n)
+        Si = IMM_node_selection(RRS, _k, _n)
         FrSi = covered_fraction(RRS, Si)
         if _n * FrSi >= (1 + _epsilon_prime) * x:
             LB = _n * FrSi / (1 + _epsilon_prime)
             break
 
-        # lambda star is defined in Equation 6
-        _alpha = np.sqrt(IMM_para_l * np.log(_n) + np.log(2))
-        _beta = np.sqrt(
-            (1 - 1 / np.math.e) * (np.log(float(np.math.comb(_n, _k))) + IMM_para_l * np.log(_n) + np.log(2)))
-        _lambda_star = 2 * _n * (((1 - 1 / np.math.e) * _alpha + _beta) ** 2) * (IMM_para_epsilon ** -2)
-        _theta = _lambda_star / LB
-        while len(RRS) <= _theta:
-            # select a node v from G uniformly at random
-            # generate an RR set for v, and insert it into R
-            RRS.append(imp.get_a_random_RRS(p=imp.p))
+    # lambda star is defined in Equation 6
+    _alpha = np.sqrt(IMM_para_l * np.log(_n) + np.log(2))
+    _beta = np.sqrt((1 - 1 / np.math.e) * (log_comb_n_k + IMM_para_l * np.log(_n) + np.log(2)))
+    _lambda_star = 2 * _n * (((1 - 1 / np.math.e) * _alpha + _beta) ** 2) * (IMM_para_epsilon ** -2)
+    _theta = _lambda_star / LB
+    print("_theta is {0}".format(_theta))
+    while len(RRS) <= _theta:
+        # select a node v from G uniformly at random
+        # generate an RR set for v, and insert it into R
+        RRS.append(imp.get_a_unused_rrset())
 
-        logger.debug("RRS size is {0}".format(len(RRS)))
     return RRS
 
 
 def IMM(imp):
     global IMM_para_l
+    IMM_para_l0 = IMM_para_l
+
     IMM_para_l = IMM_para_l * (1 + np.log(2) / np.log(imp.V))
     RRS = IMM_sampling(imp)
-    _, trace = IMM_node_selection(RRS, imp.k, imp.V)
+    S_k = IMM_node_selection(RRS, imp.k, imp.V)
 
-    return trace
+    IMM_para_l = IMM_para_l0
+
+    return S_k, RRS
+
+
+def IMM_points(imp,  cnt):
+    points = []
+
+    step = int(imp.k / cnt)
+    if step == 0:
+        step = 1
+    k = imp.k
+    k0 = k
+
+    while k > 0:
+        imp.set_k(k)
+        imp.refresh_rrset()
+
+        S_k, RRS = IMM(imp)
+
+        points.append(S_k)
+        k = k - step
+
+    imp.set_k(k0)
+    return points
+
+
+def save_solution(solution, func_name,  imp):
+    """
+
+    :param func_name:
+    :param imp:
+    :param solution: [ [influences], [costs]]
+    :return:
+    """
+
+    # f = open()
+    pass
+

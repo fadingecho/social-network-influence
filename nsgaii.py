@@ -9,42 +9,54 @@ from inspyred.ec.generators import diversify
 from inspyred.ec.variators import crossover, mutator
 from bitmap import BitMap
 from time import time
-from spreading_models import IC
 
 
 def imp_local_search2(population, args):
     # local search
-    num_users = args.get('num_users')
     _ec = args.get('_ec')
 
-    seed_mask = bitmap.BitMap(num_users + 1)
-    for i in range(1, num_users + 1):
-        seed_mask.set(i)
+    # chose candidate randomly
+    individual_sample = copy.deepcopy(random.sample(population, 100))
+    candidate_sample_deep = [i.candidate for i in individual_sample]
 
-    counter = [0] * (num_users + 1)
-    bk = args.get('bk')
-    RRS = args.get('RRS')
-    ls_skeleton = []
-    while not seed_mask.none() and len(ls_skeleton) < int(len(population) * 0.2):
-        # we should get a rr set randomly
-        r = RRS[random.randint(0, len(RRS) - 1)]
+    # try to use a small RRS to improve these candidates
+    # since the scale of RRS is small, it will converge quickly
+    RRS_sample = random.sample(args.get('RRS'), 1000)
+
+    # do node selection operation
+    hash_table = dict()
+    for r in RRS_sample:
         for node in r:
-            if seed_mask.test(node):
-                counter[node] = counter[node] + 1
-                if counter[node] == bk:
-                    ls_skeleton.append(node)
-                    seed_mask.reset(node)
+            if node not in hash_table:
+                hash_table[node] = []
 
-    _ec.logger.debug("search result : {0}".format(ls_skeleton))
+            hash_table[node].append(r)
 
-    ls_offspring_cs = []
-    for _ in range(0, int(len(population) * 0.3)):
-        cs = random.choice(population).candidate
-        for sk in random.sample(ls_skeleton, random.randint(1, len(ls_skeleton))):
-            cs.set(sk)
-        ls_offspring_cs.append(cs)
-    _ec.logger.debug(
-        'local search generated {0} candidates'.format(len(ls_offspring_cs)))
+    while len(hash_table) > 0:
+        # sort the dic by the length of RRS set, which related to the influence
+        sorted_table = sorted(hash_table.items(), key=lambda d: len(d[1]), reverse=True)
+        max_item = sorted_table[0]
+        overlapping_nodes = []
+
+        # record the nodes shares same rr sets with max_item[0]
+        # remove the record of overlapped RRS in each item
+        trash_can = []
+        for r in max_item[1]:
+            for node, RRS in hash_table.items():
+                if r in RRS:
+                    RRS.remove(r)
+                    overlapping_nodes.append(node)
+                    if len(RRS) == 0:
+                        trash_can.append(node)
+
+        # refine the candidate by combine the nodes into max_item[0]
+        for c in candidate_sample_deep:
+            for ol in overlapping_nodes:
+                c.reset(ol)
+            c.set(max_item[0])
+
+        for trash in trash_can:
+            hash_table.pop(trash)
 
     maximize = args.get('maximize')
     logger = _ec.logger
@@ -60,9 +72,9 @@ def imp_local_search2(population, args):
     logger.debug(
         'evaluation using {0} at generation {1} and evaluation {2}'.format(imp_evaluator.__name__, _ec.num_generations,
                                                                            _ec.num_evaluations))
-    ls_offspring_fit = imp_evaluator(candidates=ls_offspring_cs, args=args)
+    ls_offspring_fit = imp_evaluator(candidates=candidate_sample_deep, args=args)
     ls_offspring = []
-    for cs, fit in zip(ls_offspring_cs, ls_offspring_fit):
+    for cs, fit in zip(candidate_sample_deep, ls_offspring_fit):
         if fit is not None:
             off = Individual(cs, maximize=maximize)
             off.fitness = fit
@@ -220,8 +232,10 @@ def imp_observer(population, num_generations, num_evaluations, args):
     max_gen = args.get('max_generations')
     _utils.show_process_bar("nsga-ii evolving :", num_generations, max_gen)
 
+    if num_generations == 0:
+        return
     if args.get("local_search") and num_generations % 5 == 0:
-        imp_local_search(population, args)
+        imp_local_search2(population, args)
 
 
 @crossover
@@ -233,26 +247,30 @@ def imp_cross(random, mom, dad, args):
     bro = copy.deepcopy(dad)
     sis = copy.deepcopy(mom)
 
-    for i in random.sample(values, int(num_users / 2)):
-        if dad.test(i):
-            sis.set(i)
-        else:
-            sis.reset(i)
+    if random.random() < 1:
+        for i in random.sample(values, int(num_users / 2)):
+            if dad.test(i):
+                sis.set(i)
+            else:
+                sis.reset(i)
 
-        if mom.test(i):
-            bro.set(i)
-        else:
-            bro.reset(i)
+            if mom.test(i):
+                bro.set(i)
+            else:
+                bro.reset(i)
+
+    else:
+        # heuristic
+        pass
 
     children.append(bro)
     children.append(sis)
-
     return children
 
 
 @mutator
 def imp_mutate(random, candidate, args):
-    if random.random() > 0.5:
+    if random.random() < 1:
         return candidate
 
     num_users = args.get('num_users')
@@ -262,7 +280,7 @@ def imp_mutate(random, candidate, args):
     return candidate
 
 
-def optimize(imp, pop_size=100, max_generations=100, ls_flag=False, initial_pop=None, prng=None, bk=100):
+def optimize(imp, pop_size=100, max_generations=100, ls_flag=False, initial_pop=None, prng=None, bk=100, RRS=None):
     """
     my modified nsga-ii
     :param bk:
@@ -285,9 +303,10 @@ def optimize(imp, pop_size=100, max_generations=100, ls_flag=False, initial_pop=
 
     ea = inspyred.ec.emo.NSGA2(prng)
 
+    # simply removing or adding nodes will always come with worse combination
     ea.variator = [
         imp_cross,
-        imp_mutate
+        # imp_mutate
     ]
     ea.terminator = inspyred.ec.terminators.generation_termination
     ea.observer = imp_observer
@@ -304,7 +323,7 @@ def optimize(imp, pop_size=100, max_generations=100, ls_flag=False, initial_pop=
         values=range(1, imp.V + 1),  # for discrete bounder
 
         num_users=imp.V,
-        RRS=imp.RRS,
+        RRS=RRS,
         k=imp.k,
         local_search=ls_flag,
         bk=bk
