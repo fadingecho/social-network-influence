@@ -1,9 +1,9 @@
 import os
+import random
+
 import _utils
 import numpy as np
 import pandas as pd
-
-from reverse_sampling import RRS_handler
 
 
 class IMP:
@@ -13,13 +13,13 @@ class IMP:
     rrs_path = None
 
     G = None  # graph stored as edge list
+    G_transpose = None  # for reverse sample
     V = None  # num of nodes
     E = None  # num of directed edge
     p = 0.2  # propagation probability
     mc = 1000  # monte carlo repetition
 
     weighted = False  # if graph is weighted
-    directed = False  # if graph is directed
 
     k = 0  # k-seed users in IMP
 
@@ -47,13 +47,12 @@ class IMP:
             dtype='Int32',
             skiprows=1
         )
-
+        self.G_transpose = self.G.loc[:, ['target', 'source']]
+        self.G_transpose.columns = ['source', 'target']
         self.set_k(k)
 
         if p is not None:
             self.p = p
-
-        self._rrs_handler = RRS_handler(self)
 
     def set_k(self, k):
         if k == 0:
@@ -63,26 +62,30 @@ class IMP:
         else:
             self.k = k
 
-    def load_RRS_data(self):
-        """
-        use it before running an algorithm
-        :return:
-        """
-        self._rrs_handler.refresh_copy()
+    def reverse_sample_IC(self, node=None):
+        if node is None:
+            node = random.choice(list(range(1, self.V + 1)))
 
-    def get_a_unused_rrset(self):
-        """
-        return a unused rr set
-        :return:
-        """
-        return self._rrs_handler.get_a_random_rrs()
+        S = [node]
+        reverse_spread = []
+        # Simulate propagation process
+        new_active, A = S[:], S[:]
+        while new_active:
+            # Get edges that flow out of each newly active node
+            temp = self.G_transpose.loc[self.G_transpose['source'].isin(new_active)]
 
-    def save_new_rrset(self):
-        """
-        use it before running an algorithm
-        :return:
-        """
-        self._rrs_handler.update_file()
+            # Extract the out-neighbors of those nodes
+            targets = temp['target'].tolist()
 
-    def refresh_rrset(self):
-        self._rrs_handler.refresh_copy()
+            success = np.random.uniform(0, 1, len(targets)) < self.p
+
+            # Determine those neighbors that become infected
+            new_ones = np.extract(success, targets)
+
+            # Create a list of nodes that weren't previously activated
+            new_active = list(set(new_ones) - set(A))
+
+            # Add newly activated nodes to the set of activated nodes
+            A += new_active
+
+        return A

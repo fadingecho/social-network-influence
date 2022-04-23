@@ -17,7 +17,7 @@ def process_end(content_str=""):
     print(" " + content_str)
 
 
-def save_results(result_dict, dataset_name, result_path, exp_info, file_id):
+def save_solutions(result_dict, dataset_name, result_path, exp_info, file_id):
     # save result, file name identified by file_id
 
     for func_name, result in result_dict.items():
@@ -28,11 +28,14 @@ def save_results(result_dict, dataset_name, result_path, exp_info, file_id):
             os.makedirs(result_path + dataset_name)
             f = open(file_name, 'w')
 
-        lines = [exp_info + '\n']
-        for s in result:
+        lines = [exp_info + ' ' + str(result[1]) + '\n']
+        for s in result[0]:
             tmp = s
             if isinstance(s, Individual):
-                tmp = s.candidate[0].nonzero()
+                if isinstance(s.candidate, BitMap):
+                    tmp = s.candidate.nonzero()
+                elif isinstance(s.candidate[0], BitMap):
+                    tmp = s.candidate[0].nonzero()
 
             lines.append(str(tmp))
 
