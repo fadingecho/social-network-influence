@@ -3,6 +3,7 @@ import datetime
 import random
 
 from bitmap import BitMap
+from inspyred.ec import Individual
 from matplotlib import pyplot as plt
 
 color_plt = ['b', 'r', 'g', 'y', 'c', 'm']
@@ -16,8 +17,30 @@ def process_end(content_str=""):
     print(" " + content_str)
 
 
-def show_result(result_dict, dataset_name, result_path, title, display=False, xlabel='Influence spread',
-                ylabel='Recruitment costs'):
+def save_results(result_dict, dataset_name, result_path, exp_info, file_id):
+    # save result, file name identified by file_id
+
+    for func_name, result in result_dict.items():
+        file_name = result_path + dataset_name + '/' + file_id + func_name + '.csv'
+        try:
+            f = open(file_name, 'w')
+        except FileNotFoundError:
+            os.makedirs(result_path + dataset_name)
+            f = open(file_name, 'w')
+
+        lines = [exp_info + '\n']
+        for s in result:
+            tmp = s
+            if isinstance(s, Individual):
+                tmp = s.candidate[0].nonzero()
+
+            lines.append(str(tmp))
+
+        f.writelines(lines)
+
+
+def visualize_result(result_dict, dataset_name, result_path, exp_title, file_id, display=False, xlabel='Influence spread',
+                     ylabel='Recruitment costs'):
     fig, ax = plt.subplots()
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -31,16 +54,15 @@ def show_result(result_dict, dataset_name, result_path, title, display=False, xl
                    label=key)
     ax.legend()
     ax.grid(True)
-    plt.title(title)
+    plt.title(exp_title)
 
-    # save result, file name identified by a none-sense prefix
-    dataset_name = result_path + dataset_name + '/result' + str(datetime.datetime.now().minute) + str(
-        datetime.datetime.now().hour) + '.pdf'
+    # save result, file name identified by file_id
+    file_name = result_path + dataset_name + '/' + file_id + '.pdf'
     try:
-        plt.savefig(dataset_name, format='pdf')
+        plt.savefig(file_name, format='pdf')
     except FileNotFoundError:
         os.makedirs(result_path + dataset_name)
-        plt.savefig(dataset_name, format='pdf')
+        plt.savefig(file_name, format='pdf')
 
     if display:
         plt.show()
@@ -195,31 +217,6 @@ def fig2():
 
 
 if __name__ == "__main__":
-    # encode_node_ID("./datasets/soc-LiveJournal1")
-    fig2()
+    encode_node_ID("./datasets/Wiki-Vote")
+    encode_node_ID("./datasets/com-dblp.ungraph")
 
-    # from operator import itemgetter
-    #
-    # import matplotlib.pyplot as plt
-    # import networkx as nx
-    #
-    # # Create a BA model graph - use seed for reproducibility
-    # n = 1000
-    # m = 2
-    # seed = 20532
-    # G = nx.barabasi_albert_graph(n, m, seed=seed)
-    #
-    # # find node with largest degree
-    # node_and_degree = G.degree()
-    # (largest_hub, degree) = sorted(node_and_degree, key=itemgetter(1))[-1]
-    #
-    # # Create ego graph of main hub
-    # hub_ego = nx.ego_graph(G, largest_hub)
-    #
-    # # Draw graph
-    # pos = nx.spring_layout(hub_ego, seed=seed)  # Seed layout for reproducibility
-    # nx.draw(hub_ego, pos, node_color="b", node_size=50, with_labels=False)
-    #
-    # options = {"node_size": 300, "node_color": "r"}
-    # nx.draw_networkx_nodes(hub_ego, pos, nodelist=[largest_hub], **options)
-    # plt.show()
